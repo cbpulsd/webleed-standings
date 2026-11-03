@@ -1,6 +1,6 @@
 // weBLEEDfpv standings backend.
 //
-//   Hourly timer (wrangler.jsonc "triggers")  -> refreshes live tracks, locks tracks at their lock time
+//   Timers (wrangler.jsonc "triggers")        -> hourly refresh of live tracks; lock run Saturdays 11:59 PM Eastern
 //   GET  /api/tracks                          -> every track with its status, for the tabs
 //   GET  /api/tracks/:id                      -> one track's standings
 //   GET  /api/tracks/:id/history              -> that track's hourly snapshots
@@ -25,8 +25,10 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
+    // Use the real clock if the timer runs late, so a late final fetch is recognized as late.
+    const now = Math.max(Date.now(), event.scheduledTime);
     ctx.waitUntil(
-      runSchedule(env, event.scheduledTime).then((results) => console.log(JSON.stringify({ scheduled: new Date(event.scheduledTime).toISOString(), results: results.map(({ record, ...r }) => r) })))
+      runSchedule(env, now).then((results) => console.log(JSON.stringify({ scheduled: new Date(event.scheduledTime).toISOString(), results: results.map(({ record, ...r }) => r) })))
     );
   },
 };

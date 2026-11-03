@@ -17,13 +17,14 @@ export const LOCK_GRACE_MINUTES = 10;
 // Tracks, in order. Add more by appending { id, name, leaderboardUrl, locksAt }.
 //   leaderboardUrl: the Velocidrone leaderboard page. Leave it out and the tab stays grayed out.
 //   locksAt: when standings freeze, as a UTC timestamp. After it, the track is never fetched again.
+//            Must line up with a timer in wrangler.jsonc (Saturdays 11:59 PM Eastern is set up).
 //   teams: optional roster for just this track (defaults to TEAMS below).
 export const TRACKS = [
   {
     id: 1,
     name: "Track 1",
     leaderboardUrl: "https://www.velocidrone.com/leaderboard/29/2207/All",
-    locksAt: "2026-11-08T05:00:00Z", // midnight at the end of Sat Nov 7, Eastern time
+    locksAt: "2026-11-08T04:59:00Z", // Sat Nov 7, 11:59 PM Eastern
   },
   { id: 2, name: "Track 2" },
   { id: 3, name: "Track 3" },

@@ -20,7 +20,7 @@ const page = (rows) =>
 // Each scenario replays the hourly timer up to a moment in the week.
 const SCENARIOS = {
   live: { label: "Live now", at: () => Math.min(Date.now(), LOCK - 30 * HOUR - 17 * 60_000) },
-  closing: { label: "Sat 11:20 PM, just before lock", at: () => LOCK - 40 * 60_000 },
+  closing: { label: "Sat 11:20 PM, just before lock", at: () => LOCK - 39 * 60_000 },
   final: { label: "After the lock (final)", at: () => LOCK + 26 * HOUR },
 };
 
