@@ -1,8 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  // TEST Worker, separate from the live page (webleed-s5-leaderboard).
-  // Switch this to "webleed-s5-leaderboard" only when ready to replace the live page.
-  "name": "webleed-standings-test",
+  // The live Worker: webleed-s5-leaderboard.blastaa.workers.dev
+  "name": "webleed-s5-leaderboard",
   "main": "src/index.js",
   "compatibility_date": "2026-10-01",
   "workers_dev": true,

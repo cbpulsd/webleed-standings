@@ -159,3 +159,15 @@ test("a week of hourly runs stays far under the free plan's 1,000 writes a day",
   for (let h = 24; h > 0; h--) await runSchedule(env, LOCK - h * HOUR, { fetchImpl: site.fetch, retryDelayMs: 0 });
   assert.equal(env.STANDINGS.writes, 48); // record + history, once an hour
 });
+
+test("old page's /data route still answers from saved times", async () => {
+  const env = { STANDINGS: new MemoryKV() };
+  const r0 = await route(new Request("https://x.dev/data"), new URL("https://x.dev/data"), env, ctx(), LOCK - HOUR, {});
+  assert.equal(r0.status, 503);
+  const site = fakeSite([[1, "70.000", "TMAD"]]);
+  await runSchedule(env, LOCK - HOUR, { fetchImpl: site.fetch, retryDelayMs: 0 });
+  const r = await route(new Request("https://x.dev/data"), new URL("https://x.dev/data"), env, ctx(), LOCK - HOUR, {});
+  const body = await r.json();
+  assert.equal(body.rows[0].name, "TMAD");
+  assert.ok(body.fetchedAt);
+});

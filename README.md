@@ -37,9 +37,9 @@ The admin routes stay off until an `ADMIN_TOKEN` secret is set on the Worker.
 
 ## Deploying
 
-`wrangler.jsonc` deploys to a **test** Worker (`webleed-standings-test`), separate from the live page (`webleed-s5-leaderboard`). Switch the `name` only when the test version is approved to replace the live one.
+Every push to `main` deploys to the **live** Worker, `webleed-s5-leaderboard` (connected under the Worker's **Settings → Build**). Check changes with `npm test` and the test preview before pushing to `main`.
 
-Cloudflare builds and deploys on every push to `main` once the repo is connected: **Workers & Pages → Create application → Import a repository**.
+`/data` is kept for the original single-track page, so any tab left open from before the switch keeps updating until it's reloaded.
 
 ## Development
 

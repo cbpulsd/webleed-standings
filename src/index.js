@@ -35,6 +35,15 @@ export default {
 
 export async function route(request, url, env, ctx, now, deps = {}) {
   const parts = url.pathname.replace(/\/+$/, "").split("/").filter(Boolean);
+
+  // Old single-track page (before Nov 3) polls /data. Keep it working until those tabs are reloaded.
+  if (request.method === "GET" && parts.length === 1 && parts[0] === "data") {
+    const track = TRACKS.find((t) => t.leaderboardUrl);
+    const record = track ? await getRecord(env, track.id) : null;
+    if (!record) return json({ error: "no times saved yet" }, 503, "no-store");
+    return json({ rows: record.rows, fetchedAt: record.fetchedAt }, 200, "public, max-age=60");
+  }
+
   if (parts[0] !== "api") return new Response("Not found", { status: 404 });
 
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors() });
