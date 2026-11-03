@@ -16,9 +16,11 @@
 
   // Times are UTC.
   //   "0 * * * *"   every hour on the hour: refresh live tracks
-  //   "59 4 * * SUN"  Saturday 11:59 PM Eastern (EST, UTC-5): lock tracks whose deadline it is
+  //   "50 4 * * SUN"  Saturday 11:50 PM Eastern (EST, UTC-5): last refresh before the deadline,
+  //                   so a lock that can't fetch falls back to times at most 9 minutes old
+  //   "59 4 * * SUN"  Saturday 11:59 PM Eastern: lock tracks whose deadline it is
   // Cloudflare numbers weekdays 1-7 with Sunday = 1 (not 0), so use day names.
-  "triggers": { "crons": ["0 * * * *", "59 4 * * SUN"] },
+  "triggers": { "crons": ["0 * * * *", "50 4 * * SUN", "59 4 * * SUN"] },
 
   "observability": { "enabled": true }
 }

@@ -1,6 +1,6 @@
 // Keeps each track's saved record current, and freezes it at the track's lock time.
 
-import { ALIASES, LOCK_GRACE_MINUTES, TEAMS, TRACKS } from "./config.js";
+import { ALIASES, FINAL_FETCH_WINDOW_SECONDS, TEAMS, TRACKS } from "./config.js";
 import { fetchLeaderboard } from "./leaderboard.js";
 import { compactSnapshot, computeStandings } from "./standings.js";
 import { appendHistory, getRecord, putRecord } from "./store.js";
@@ -11,7 +11,7 @@ export const lockTime = (track) => (track.locksAt ? Date.parse(track.locksAt) : 
 
 // "upcoming": no leaderboard yet, tab grayed out
 // "live":     fetched every hour until its lock time
-// "locking":  past its lock time, final save not done yet (done on the next run or visit)
+// "locking":  past its lock time, final save not done yet; never fetched, saved data shown
 // "locked":   final standings saved, never fetched again
 export function trackStatus(track, record, now) {
   if (record?.status === "locked") return "locked";
@@ -47,19 +47,24 @@ export async function syncTrack(env, track, now, { force = false, staleMs = 0, f
   const rows = await fetchLeaderboard(track.leaderboardUrl, fetchImpl);
   const fetchedAt = new Date(now).toISOString();
   const next = { trackId: track.id, status: "live", fetchedAt, rowCount: rows.length, rows };
+  // A refresh that was still running when the lock happened must not overwrite it.
+  const current = await getRecord(env, track.id);
+  if (current?.status === "locked") return { action: "skip-locked", record: current };
   await putRecord(env, track.id, next);
   await appendHistory(env, track.id, compactSnapshot(computeStandings(rows, teamsFor(track), ALIASES), fetchedAt));
   return { action: "refreshed", record: next };
 }
 
-// Freeze a track. A fresh fetch counts as final only within the grace window after
-// the lock time; otherwise the last times saved before the deadline are used.
-export async function lockTrack(env, track, record, now, { fetchImpl, attempts = 3, retryDelayMs = 4000 } = {}) {
+// Freeze a track. A fresh fetch counts as final only when the lock timer runs within
+// FINAL_FETCH_WINDOW_SECONDS of the lock time; otherwise the last times saved before
+// the deadline are used. Page visits pass allowFetch: false.
+export async function lockTrack(env, track, record, now, { fetchImpl, attempts = 3, retryDelayMs = 4000, allowFetch = true } = {}) {
   const deadline = lockTime(track);
   const lateBy = now - deadline;
+  const inWindow = lateBy < FINAL_FETCH_WINDOW_SECONDS * 1000;
   let rows = null, fetchedAt = null, lockMethod = null;
 
-  if (lateBy <= LOCK_GRACE_MINUTES * 60_000) {
+  if (allowFetch && inWindow) {
     for (let i = 0; i < attempts && !rows; i++) {
       try {
         rows = await fetchLeaderboard(track.leaderboardUrl, fetchImpl);
@@ -73,9 +78,9 @@ export async function lockTrack(env, track, record, now, { fetchImpl, attempts =
   if (!rows && record?.rows && Date.parse(record.fetchedAt) <= deadline) {
     rows = record.rows;
     fetchedAt = record.fetchedAt;
-    lockMethod = lateBy <= LOCK_GRACE_MINUTES * 60_000 ? "last-before-deadline (final fetch failed)" : "last-before-deadline";
+    lockMethod = allowFetch && inWindow ? "last-before-deadline (final fetch failed)" : "last-before-deadline";
   }
-  if (!rows) throw new Error("no times saved before the lock time and the final fetch failed");
+  if (!rows) throw new Error("no times saved before the lock time, and no final fetch was allowed or it failed");
 
   // Another run may have locked it while this one was fetching.
   const current = await getRecord(env, track.id);

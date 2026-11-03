@@ -8,7 +8,7 @@
 //
 // The page in /public is served as static files and only reads from /api.
 
-import { ALIASES, LEAGUE, SEASON, STALE_MINUTES, TRACKS } from "./config.js";
+import { ALIASES, LATE_LOCK_AFTER_MINUTES, LEAGUE, NO_VISIT_REFRESH_BEFORE_LOCK_MINUTES, SEASON, STALE_MINUTES, TRACKS } from "./config.js";
 import { computeStandings } from "./standings.js";
 import { getHistory, getRecord } from "./store.js";
 import { findTrack, lockTrack, lockTime, runSchedule, syncTrack, teamsFor, trackStatus } from "./sync.js";
@@ -71,16 +71,22 @@ export async function route(request, url, env, ctx, now, deps = {}) {
     let record = track.leaderboardUrl ? await getRecord(env, track.id) : null;
     const status = trackStatus(track, record, now);
 
-    if (status === "locking") {
-      // Past the lock time and the timer hasn't frozen it yet: do it now.
-      record = (await lockTrack(env, track, record, now, deps)).record;
+    // Locked tracks: served from the saved final copy only. Nothing below runs for them.
+    if (status === "locking" && now - lockTime(track) > LATE_LOCK_AFTER_MINUTES * 60_000 && record) {
+      // The lock timer never ran: lock from the times saved before the deadline. Never fetches.
+      record = (await lockTrack(env, track, record, now, { ...deps, allowFetch: false })).record;
     } else if (status === "live" && !record) {
       // First visit before the timer has ever run.
       record = (await syncTrack(env, track, now, { ...deps, force: true, record })).record;
-    } else if (status === "live" && now - Date.parse(record.fetchedAt) > STALE_MINUTES * 60_000) {
+    } else if (
+      status === "live" &&
+      now - Date.parse(record.fetchedAt) > STALE_MINUTES * 60_000 &&
+      now < lockTime(track) - NO_VISIT_REFRESH_BEFORE_LOCK_MINUTES * 60_000
+    ) {
       // The hourly timer was missed: catch up in the background, answer with what's saved.
       ctx.waitUntil(syncTrack(env, track, now, { ...deps, staleMs: STALE_MINUTES * 60_000, record }).catch((e) => console.error(e)));
     }
+    // "locking" within LATE_LOCK_AFTER_MINUTES: show saved data, fetch nothing, leave the lock to the timer.
 
     return json(detail(track, record, now), 200, record?.status === "locked" ? "public, max-age=3600" : "public, max-age=60");
   }

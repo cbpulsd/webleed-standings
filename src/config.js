@@ -6,13 +6,19 @@ export const SEASON = "Season 5";
 // A pilot with no posted time counts as this many seconds.
 export const NO_TIME = 999.99;
 
-// If the hourly timer is missed, a visitor's request refreshes data older than this.
+// If the hourly timer is missed, a visit to a live track refreshes data older than this.
+// Visits never refresh in the last few minutes before a lock time.
 export const STALE_MINUTES = 65;
+export const NO_VISIT_REFRESH_BEFORE_LOCK_MINUTES = 5;
 
-// How long after a track's lock time a fresh "final" fetch is still trusted.
-// Later than this, the lock uses the last times saved before the deadline instead,
-// so times posted after the deadline never count.
-export const LOCK_GRACE_MINUTES = 10;
+// Only the lock timer may fetch a track's final times, and only within this many seconds
+// of the lock time. Otherwise the lock uses the last times saved before the deadline,
+// so times posted after the deadline never count. Page visits never fetch a past-deadline track.
+export const FINAL_FETCH_WINDOW_SECONDS = 60;
+
+// If the lock timer never ran, the first visit this long after the lock time
+// locks the track from its saved data (no fetch).
+export const LATE_LOCK_AFTER_MINUTES = 30;
 
 // Tracks, in order. Add more by appending { id, name, leaderboardUrl, locksAt }.
 //   leaderboardUrl: the Velocidrone leaderboard page. Leave it out and the tab stays grayed out.

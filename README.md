@@ -6,8 +6,10 @@ Team standings for the weBLEEDfpv Velocidrone league: each team's combined time 
 
 - **Backend** (`src/`, a Cloudflare Worker):
   - An hourly timer (`0 * * * *` UTC) fetches the Velocidrone leaderboard for each live track and saves it in Workers KV.
-  - A second timer runs Saturdays at 11:59 PM Eastern (`59 4 * * SUN` UTC). Any track whose `locksAt` has arrived gets its final standings saved and is marked locked. A locked track is never fetched again.
-  - If that run happens more than 10 minutes late, the lock uses the last times saved *before* the deadline, so late times never count.
+  - Saturdays at 11:50 PM Eastern (`50 4 * * SUN` UTC) there's one more refresh, then at 11:59 PM (`59 4 * * SUN`) the lock run. Any track whose `locksAt` has arrived gets its final standings saved and is marked locked. A locked track is never fetched again.
+  - Only the lock run fetches final times, and only within 60 seconds of the deadline. Otherwise it locks with the last times saved before the deadline, so late times never count.
+  - After the deadline, page visits never fetch. Until the lock is saved they show the last saved times; if the lock run never happens, the first visit 30+ minutes later locks the track from saved data.
+  - A refresh still running when the lock lands is discarded, so it can't undo a lock.
   - Locked tracks keep a frozen copy of the roster and standings, so later roster fixes don't change past results.
   - Every hourly run also adds a small snapshot to that track's history, for charts later.
 - **Page** (`public/`, static files): reads only from `/api`. It never contacts Velocidrone.

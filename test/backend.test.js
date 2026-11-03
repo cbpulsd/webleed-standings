@@ -87,18 +87,65 @@ test("hourly runs refresh, then lock exactly at the deadline, then never fetch a
   assert.equal(hist.entries.at(-1).final, true);
 });
 
-test("a late lock uses the last times saved before the deadline", async () => {
+test("after the deadline, visits never fetch; a missed lock run is covered from saved data", async () => {
   const env = { STANDINGS: new MemoryKV() };
   const site = fakeSite([[1, "70.000", "TMAD"]]);
   const deps = { fetchImpl: site.fetch, retryDelayMs: 0 };
   await runSchedule(env, LOCK - HOUR, deps);
   site.rows = [[1, "50.000", "TMAD"]]; // posted after the deadline
+  const calls = site.calls;
 
-  // Timer missed; the first visitor shows up 3 hours late.
+  // 2 minutes past the deadline, before the lock is saved: saved times, no fetch, not locked yet.
+  const early = await get(env, "/api/tracks/1", LOCK + 2 * 60_000, deps);
+  assert.equal(early.track.status, "locking");
+  assert.equal(early.standings.teams.find((t) => t.sponsor === "Velocidrone").pilots.find((p) => p.captain).time, 70);
+  assert.equal(site.calls, calls, "no fetch after the deadline from a visit");
+
+  // The lock timer never ran; first visit 3 hours later locks from saved data.
   const body = await get(env, "/api/tracks/1", LOCK + 3 * HOUR, deps);
   assert.equal(body.track.status, "locked");
   assert.equal(body.lockMethod, "last-before-deadline");
   assert.equal(body.standings.teams.find((t) => t.sponsor === "Velocidrone").pilots.find((p) => p.captain).time, 70);
+  assert.equal(site.calls, calls, "still no fetch");
+});
+
+test("a lock run more than 60 seconds late doesn't fetch", async () => {
+  const env = { STANDINGS: new MemoryKV() };
+  const site = fakeSite([[1, "70.000", "TMAD"]]);
+  const deps = { fetchImpl: site.fetch, retryDelayMs: 0 };
+  await runSchedule(env, LOCK - 9 * 60_000, deps); // the 11:50 PM refresh
+  site.rows = [[1, "50.000", "TMAD"]];
+  const calls = site.calls;
+  const r = await runSchedule(env, LOCK + 61_000, deps); // e.g. the midnight hourly run
+  assert.equal(r[0].action, "locked");
+  assert.equal(r[0].record.lockMethod, "last-before-deadline");
+  assert.equal(site.calls, calls);
+});
+
+test("a refresh that finishes after the lock can't overwrite it", async () => {
+  const env = { STANDINGS: new MemoryKV() };
+  const site = fakeSite([[1, "70.000", "TMAD"]]);
+  await runSchedule(env, LOCK - HOUR, { fetchImpl: site.fetch, retryDelayMs: 0 });
+  // A slow refresh starts before the deadline; the lock lands while it's fetching.
+  let release;
+  const slowFetch = (...a) => new Promise((res) => { release = () => res(site.fetch(...a)); });
+  const pending = syncTrack(env, T1, LOCK - 30_000, { force: true, fetchImpl: slowFetch });
+  await new Promise((r) => setTimeout(r, 0));
+  await runSchedule(env, LOCK + 1000, { fetchImpl: site.fetch, retryDelayMs: 0 });
+  release();
+  const result = await pending;
+  assert.equal(result.action, "skip-locked");
+  assert.equal((await env.STANDINGS.get("track:1", "json")).status, "locked");
+});
+
+test("visits don't start a refresh in the last 5 minutes before the lock", async () => {
+  const env = { STANDINGS: new MemoryKV() };
+  const site = fakeSite([[1, "70.000", "TMAD"]]);
+  const deps = { fetchImpl: site.fetch, retryDelayMs: 0 };
+  await runSchedule(env, LOCK - 2 * HOUR, deps);
+  const c = ctx();
+  await route(new Request("https://x.dev/api/tracks/1"), new URL("https://x.dev/api/tracks/1"), env, c, LOCK - 2 * 60_000, deps);
+  assert.equal(c.jobs.length, 0);
 });
 
 test("if the final fetch fails, the lock falls back to the last saved times", async () => {
