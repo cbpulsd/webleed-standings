@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // TEST Worker, separate from the live page (webleed-s5-leaderboard).
+  // Switch this to "webleed-s5-leaderboard" only when ready to replace the live page.
+  "name": "webleed-standings-test",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+
+  // The standings page (public/) is served as static files; /api/* runs the Worker.
+  "assets": { "directory": "./public" },
+
+  // Saved standings for every track.
+  "kv_namespaces": [
+    { "binding": "STANDINGS", "id": "fbcf86f1f8254002bbbcc3dbccd33127" }
+  ],
+
+  // Every hour on the hour (UTC). Also catches each track's lock time,
+  // as long as lock times fall on the hour.
+  "triggers": { "crons": ["0 * * * *"] },
+
+  "observability": { "enabled": true }
+}

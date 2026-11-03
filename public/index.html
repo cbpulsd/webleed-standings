@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>weBLEEDfpv Season 5 Standings</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<!--APP-->
+<div class="wrap">
+  <header>
+    <div class="eyebrow"><b>weBLEEDfpv</b> · Season 5</div>
+    <h1 id="title">Team Standings</h1>
+    <p class="sub" id="sub">Combined lap times for each team's five pilots. Lowest combined time leads. Pilots without a posted time count as 999.99.</p>
+  </header>
+
+  <nav class="tracks-scroll" aria-label="Tracks">
+    <div class="tracks" id="trackTabs" role="tablist"></div>
+  </nav>
+
+  <div class="status" id="status" data-state="busy" role="status" aria-live="polite">
+    <span class="dot" aria-hidden="true"></span>
+    <span class="msg" id="statusMsg">Loading standings…</span>
+    <span class="meta" id="statusMeta"></span>
+  </div>
+
+  <div class="views" role="tablist" aria-label="View">
+    <button id="viewTeamsBtn" role="tab" aria-selected="true" type="button">Teams</button>
+    <button id="viewPilotsBtn" role="tab" aria-selected="false" type="button">Pilots</button>
+  </div>
+
+  <section id="viewTeams" class="teams" aria-label="Team standings"></section>
+  <section id="viewPilots" hidden aria-label="Pilot times">
+    <div class="table-wrap">
+      <table class="ind">
+        <thead><tr><th class="num">#</th><th>Pilot</th><th>Team</th><th class="num">LB</th><th class="num">Time</th></tr></thead>
+        <tbody id="pilotRows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    <span>Rosters from the Season 5 draft tracker. "LB" is the pilot's position on the full Velocidrone leaderboard.</span>
+    <span>Live tracks update every hour on the hour. Each track's standings lock at its deadline and stay final after that.</span>
+  </footer>
+</div>
+<!--/APP-->
+<script src="/app.js"></script>
+</body>
+</html>

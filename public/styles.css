@@ -1,0 +1,107 @@
+/* Layout: scoreboard stack — track tabs, status strip, view switch, then ranked team blocks with pilot splits */
+:root{
+  --bg:#eef0f5; --surface:#ffffff; --sunken:#e4e7ee; --ink:#131722; --muted:#5a6276; --line:#dce0e9;
+  --accent:#cf1f3a; --accent-soft:#fbe5e9; --ok:#1d7a4f; --warn:#a1580c; --dnf:#8a90a0;
+  --display:"Chakra Petch", "Arial Narrow", system-ui, sans-serif;
+  --body:"Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono:"IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0c0f16; --surface:#141924; --sunken:#0f131c; --ink:#e8ebf2; --muted:#8e96aa; --line:#242b39;
+    --accent:#ff4f69; --accent-soft:#3a1720; --ok:#4cc38a; --warn:#e9a24d; --dnf:#6b7285;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0c0f16; --surface:#141924; --sunken:#0f131c; --ink:#e8ebf2; --muted:#8e96aa; --line:#242b39;
+  --accent:#ff4f69; --accent-soft:#3a1720; --ok:#4cc38a; --warn:#e9a24d; --dnf:#6b7285;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.45}
+[hidden]{display:none!important}
+.wrap{max-width:880px;margin:0 auto;padding-block:28px 48px;padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));display:flex;flex-direction:column;gap:18px}
+header{display:flex;flex-direction:column;gap:6px}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.eyebrow b{color:var(--accent);font-weight:600}
+h1{font-family:var(--display);font-weight:700;font-size:clamp(28px,6vw,40px);line-height:1.05;margin:0;text-wrap:balance;letter-spacing:.01em}
+.sub{color:var(--muted);margin:0;max-width:65ch}
+.sub a{color:inherit}
+
+/* Track tabs */
+.tracks-scroll{overflow-x:auto;margin-inline:-4px;padding-inline:4px;scrollbar-width:thin}
+.tracks{display:grid;grid-template-columns:repeat(var(--n,6),minmax(96px,1fr));gap:6px;padding:4px;background:var(--sunken);border:1px solid var(--line);border-radius:8px;min-width:min-content}
+.track-tab{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:8px 12px;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--muted);font:600 15px var(--display);letter-spacing:.02em;cursor:pointer;text-align:left}
+.track-tab .state{display:flex;align-items:center;gap:5px;font:500 11px var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.track-tab .state::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.7}
+.track-tab[data-status="live"] .state,.track-tab[data-status="locking"] .state{color:var(--ok)}
+.track-tab[data-status="locked"] .state::before{border-radius:1px}
+.track-tab:hover:not(:disabled){color:var(--ink)}
+.track-tab[aria-selected="true"]{background:var(--surface);color:var(--ink);border-color:var(--line);box-shadow:0 1px 2px color-mix(in srgb, var(--ink) 8%, transparent)}
+.track-tab:disabled{cursor:not-allowed;opacity:.45}
+.track-tab:disabled .state::before{display:none}
+.track-tab:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* Status strip */
+.status{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;padding:10px 14px;border:1px solid var(--line);border-radius:6px;background:var(--surface);font-size:13px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--dnf);flex:none}
+.status[data-state="live"] .dot{background:var(--ok);box-shadow:0 0 0 3px color-mix(in srgb, var(--ok) 25%, transparent)}
+.status[data-state="busy"] .dot{background:var(--warn);animation:pulse 1s infinite}
+.status[data-state="error"] .dot{background:var(--accent)}
+.status[data-state="final"] .dot{background:var(--ink);border-radius:2px}
+@keyframes pulse{50%{opacity:.35}}
+.status .msg{flex:1 1 240px;min-width:0}
+.status .meta{display:flex;flex-wrap:wrap;gap:4px 14px;font-family:var(--mono);color:var(--muted);font-variant-numeric:tabular-nums;font-size:12px}
+.status .meta b{color:var(--ink);font-weight:500}
+
+/* View switch */
+.views{display:flex;gap:4px;border-bottom:1px solid var(--line)}
+.views button{border:none;border-bottom:2px solid transparent;background:transparent;padding:8px 12px;font:600 15px var(--display);letter-spacing:.03em;color:var(--muted);cursor:pointer}
+.views button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+.views button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* Teams */
+.teams{display:flex;flex-direction:column;gap:12px}
+.team{background:var(--surface);border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.team-head{display:grid;grid-template-columns:52px 1fr auto;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line)}
+.pos{font-family:var(--display);font-weight:700;font-size:30px;line-height:1;color:var(--muted);font-variant-numeric:tabular-nums}
+.tname{min-width:0}
+.tname h2{font-family:var(--display);font-weight:600;font-size:20px;margin:0;line-height:1.15}
+.tname p{margin:2px 0 0;color:var(--muted);font-size:13px}
+.total{text-align:right}
+.total .t{font-family:var(--mono);font-weight:600;font-size:22px;font-variant-numeric:tabular-nums;line-height:1.1}
+.total .g{font-family:var(--mono);font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.posted{display:inline-block;font-family:var(--mono);font-size:11px;padding:1px 6px;border-radius:3px;background:var(--accent-soft);color:var(--accent);margin-left:6px;vertical-align:1px}
+.posted.full{background:transparent;color:var(--ok);border:1px solid color-mix(in srgb, var(--ok) 40%, transparent)}
+table{width:100%;border-collapse:collapse}
+.pilots td{padding:7px 16px;border-top:1px solid var(--line);font-size:14px}
+.pilots tr:first-child td{border-top:none}
+.pilots td.name{width:100%}
+.pilots td.lb,.pilots td.time{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right}
+.pilots td.lb{color:var(--muted);font-size:12px}
+.cap{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border:1px solid var(--line);border-radius:3px;padding:0 4px;margin-left:6px;vertical-align:1px}
+.notime td{color:var(--dnf)}
+.notime td.time::after{content:" no time";font-size:11px}
+
+/* Pilots */
+.table-wrap{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:6px}
+.ind th{font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-align:left;padding:9px 14px;border-bottom:1px solid var(--line)}
+.ind td{padding:7px 14px;border-top:1px solid var(--line);white-space:nowrap}
+.ind tr:first-child td{border-top:none}
+.ind .num{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right}
+.ind th.num{text-align:right}
+.ind .muted{color:var(--muted)}
+
+.empty{padding:28px 20px;text-align:center;color:var(--muted);background:var(--surface);border:1px dashed var(--line);border-radius:6px}
+footer{color:var(--muted);font-size:12.5px;display:flex;flex-direction:column;gap:4px}
+
+@media (max-width:520px){
+  .team-head{grid-template-columns:38px 1fr;row-gap:6px}
+  .pos{font-size:24px}
+  .total{grid-column:2;text-align:left;display:flex;gap:10px;align-items:baseline}
+  .pilots td{padding:7px 12px}
+  .tracks{grid-template-columns:repeat(var(--n,6),minmax(84px,1fr))}
+}
+@media (prefers-reduced-motion: reduce){.status[data-state="busy"] .dot{animation:none}}
