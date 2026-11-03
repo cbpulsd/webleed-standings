@@ -24,6 +24,8 @@ export const LATE_LOCK_AFTER_MINUTES = 30;
 //   leaderboardUrl: the Velocidrone leaderboard page. Leave it out and the tab stays grayed out.
 //   locksAt: when standings freeze, as a UTC timestamp. After it, the track is never fetched again.
 //            Must line up with a timer in wrangler.jsonc (Saturdays 11:59 PM Eastern is set up).
+//   quad: the required quad model. Only times on it count. { name, ids } — name as shown on
+//         the leaderboard page, ids as Velocidrone's model IDs (121 = Hummingbird RS).
 //   teams: optional roster for just this track (defaults to TEAMS below).
 export const TRACKS = [
   {
@@ -31,6 +33,7 @@ export const TRACKS = [
     name: "Track 1",
     leaderboardUrl: "https://www.velocidrone.com/leaderboard/29/2207/All",
     locksAt: "2026-11-08T04:59:00Z", // Sat Nov 7, 11:59 PM Eastern
+    quad: { name: "Hummingbird RS", ids: [121] },
   },
   { id: 2, name: "Track 2" },
   { id: 3, name: "Track 3" },

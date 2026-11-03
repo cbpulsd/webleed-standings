@@ -6,6 +6,7 @@ import { computeStandings } from "../src/standings.js";
 import { lockTrack, runSchedule, syncTrack } from "../src/sync.js";
 import { route } from "../src/index.js";
 import { ALIASES, TEAMS, TRACKS } from "../src/config.js";
+import { encrypt } from "../src/gameapi.js";
 
 const T1 = TRACKS[0];
 const LOCK = Date.parse(T1.locksAt);
@@ -17,15 +18,25 @@ class MemoryKV {
   async put(k, v) { this.writes++; this.data.set(k, v); }
 }
 
+// rows: [rank, time, name, model?]
 const pageWith = (rows) =>
   `<table><tr><th>#</th><th>Time</th><th>Player</th></tr>` +
-  rows.map(([rank, time, name]) => `<tr class="x">\n<td class="p-2">${rank}</td>\n<td class="p-2">${time}</td>\n<td class="p-2">\n  ${name}\n</td><td>Canada</td></tr>`).join("") +
+  rows.map(([rank, time, name, model = "Hummingbird RS"]) => `<tr class="x">\n<td class="p-2">${rank}</td>\n<td class="p-2">${time}</td>\n<td class="p-2">\n  ${name}\n</td><td>Canada</td><td>1000</td><td>${model}</td><td>02/11/2026</td></tr>`).join("") +
   `</table>`;
 
 // A fake Velocidrone whose board can change between calls.
+// site.game = true makes the game endpoint answer; otherwise it fails and the page is used.
 function fakeSite(rows) {
-  const site = { rows, calls: 0, fail: false };
-  site.fetch = async () => {
+  const site = { rows, calls: 0, gameCalls: 0, fail: false, game: false };
+  site.fetch = async (url) => {
+    if (String(url).includes("getLeaderBoard")) {
+      site.gameCalls++;
+      if (site.fail || !site.game) return new Response("<html>nope</html>", { status: 419 });
+      const tracktimes = site.rows.map(([, time, name, model = "Hummingbird RS"], i) => ({
+        playername: name, lap_time: String(time), model_id: model === "Hummingbird RS" ? 121 : 48, user_id: 1000 + i, country: "US",
+      }));
+      return new Response(await encrypt(JSON.stringify({ success: true, tracktimes })), { status: 200 });
+    }
     site.calls++;
     if (site.fail) return new Response("down", { status: 503 });
     return new Response(pageWith(site.rows), { status: 200 });
@@ -70,11 +81,11 @@ test("hourly runs refresh, then lock exactly at the deadline, then never fetch a
   assert.equal(r[0].action, "locked");
   assert.equal(r[0].record.lockMethod, "final-fetch");
 
-  const callsAtLock = site.calls;
+  const callsAtLock = site.calls + site.gameCalls;
   site.rows = [[1, "60.000", "TMAD"]]; // posted after the deadline
   r = await runSchedule(env, LOCK + HOUR, deps);
   assert.equal(r[0].action, "skip-locked");
-  assert.equal(site.calls, callsAtLock, "a locked track is never fetched");
+  assert.equal(site.calls + site.gameCalls, callsAtLock, "a locked track is never fetched");
 
   const body = await get(env, "/api/tracks/1", LOCK + 2 * HOUR, deps);
   assert.equal(body.track.status, "locked");
@@ -94,6 +105,7 @@ test("after the deadline, visits never fetch; a missed lock run is covered from 
   await runSchedule(env, LOCK - HOUR, deps);
   site.rows = [[1, "50.000", "TMAD"]]; // posted after the deadline
   const calls = site.calls;
+  const gameCalls = site.gameCalls;
 
   // 2 minutes past the deadline, before the lock is saved: saved times, no fetch, not locked yet.
   const early = await get(env, "/api/tracks/1", LOCK + 2 * 60_000, deps);
@@ -107,6 +119,7 @@ test("after the deadline, visits never fetch; a missed lock run is covered from 
   assert.equal(body.lockMethod, "last-before-deadline");
   assert.equal(body.standings.teams.find((t) => t.sponsor === "Velocidrone").pilots.find((p) => p.captain).time, 70);
   assert.equal(site.calls, calls, "still no fetch");
+  assert.equal(site.gameCalls, gameCalls, "not even the game endpoint");
 });
 
 test("a lock run more than 60 seconds late doesn't fetch", async () => {
@@ -128,7 +141,8 @@ test("a refresh that finishes after the lock can't overwrite it", async () => {
   await runSchedule(env, LOCK - HOUR, { fetchImpl: site.fetch, retryDelayMs: 0 });
   // A slow refresh starts before the deadline; the lock lands while it's fetching.
   let release;
-  const slowFetch = (...a) => new Promise((res) => { release = () => res(site.fetch(...a)); });
+  const gate = new Promise((res) => { release = res; });
+  const slowFetch = async (...a) => { await gate; return site.fetch(...a); };
   const pending = syncTrack(env, T1, LOCK - 30_000, { force: true, fetchImpl: slowFetch });
   await new Promise((r) => setTimeout(r, 0));
   await runSchedule(env, LOCK + 1000, { fetchImpl: site.fetch, retryDelayMs: 0 });
@@ -243,4 +257,64 @@ test("timers use cron syntax Cloudflare accepts and land on each lock time", asy
   for (const t of TRACKS.filter((x) => x.locksAt)) {
     assert.ok(parsed.some((f) => fires(f, Date.parse(t.locksAt))), `no timer fires at ${t.name}'s lock time ${t.locksAt}`);
   }
+});
+
+
+test("game endpoint is used first; times carry pilot IDs and models", async () => {
+  const env = { STANDINGS: new MemoryKV() };
+  const site = fakeSite([[1, "70.000", "TMAD"], [2, "75.000", "xer \u200e"]]);
+  site.game = true;
+  const r = await runSchedule(env, LOCK - HOUR, { fetchImpl: site.fetch, retryDelayMs: 0 });
+  assert.equal(r[0].record.source, "game");
+  assert.equal(site.calls, 0, "page not loaded when the game endpoint works");
+  assert.equal(r[0].record.rows[0].userId, 1000);
+  assert.equal(r[0].record.rows[0].model, "Hummingbird RS");
+  const body = await get(env, "/api/tracks/1", LOCK - HOUR + 60_000, {});
+  assert.equal(body.source, "game");
+  assert.equal(body.standings.teams.find((t) => t.sponsor === "WREKD").pilots.find((p) => p.name === "xer").time, 75);
+});
+
+test("if the game endpoint fails, the page is read instead and the reason is kept", async () => {
+  const env = { STANDINGS: new MemoryKV() };
+  const site = fakeSite([[1, "70.000", "TMAD"]]);
+  const r = await runSchedule(env, LOCK - HOUR, { fetchImpl: site.fetch, retryDelayMs: 0 });
+  assert.equal(r[0].record.source, "page");
+  assert.match(r[0].record.sourceError, /419/);
+  assert.equal(r[0].record.rows[0].model, "Hummingbird RS");
+});
+
+test("only times on the track's required quad count", async () => {
+  for (const game of [true, false]) {
+    const env = { STANDINGS: new MemoryKV() };
+    const site = fakeSite([[1, "60.000", "TMAD", "Tiny Hawk"], [2, "70.000", "BenDaOctopus"]]);
+    site.game = game;
+    await runSchedule(env, LOCK - HOUR, { fetchImpl: site.fetch, retryDelayMs: 0 });
+    const body = await get(env, "/api/tracks/1", LOCK - HOUR + 60_000, {});
+    const tmad = body.standings.teams.find((t) => t.sponsor === "Velocidrone").pilots.find((p) => p.captain);
+    assert.equal(tmad.posted, false, `Tiny Hawk time excluded (${game ? "game" : "page"})`);
+    assert.equal(tmad.time, 999.99);
+    assert.equal(body.standings.teams.find((t) => t.sponsor === "RadioMaster").pilots.find((p) => p.captain).time, 70);
+    assert.equal(body.quad, "Hummingbird RS");
+  }
+});
+
+test("times saved before models were collected still count", async () => {
+  const s = computeStandings([{ rank: 1, time: 70, name: "TMAD" }], TEAMS, ALIASES, TRACKS[0].quad);
+  assert.equal(s.teams.find((t) => t.sponsor === "Velocidrone").pilots.find((p) => p.captain).time, 70);
+});
+
+test("source check link reports the game endpoint without saving anything", async () => {
+  const env = { STANDINGS: new MemoryKV() };
+  const site = fakeSite([[1, "70.000", "TMAD"], [2, "71.000", "Senko", "Tiny Hawk"]]);
+  site.game = true;
+  const ok = await get(env, "/api/health/source/1", LOCK - HOUR, { fetchImpl: site.fetch });
+  assert.equal(ok.ok, true);
+  assert.equal(ok.count, 2);
+  assert.equal(ok.withUserIds, 2);
+  assert.equal(ok.rosterFoundByName, 2);
+  assert.equal(env.STANDINGS.writes, 0);
+  site.game = false;
+  const bad = await get(env, "/api/health/source/1", LOCK - HOUR, { fetchImpl: site.fetch });
+  assert.equal(bad.ok, false);
+  assert.match(bad.error, /419/);
 });

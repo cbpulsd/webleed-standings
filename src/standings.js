@@ -6,9 +6,19 @@ import { NO_TIME } from "./config.js";
 // This also strips invisible marks some Velocidrone names carry.
 export const norm = (s) => String(s).toLowerCase().replace(/\(beta tester\)/g, "").replace(/[^a-z0-9]/g, "");
 
-export function computeStandings(rows, teams, aliases = {}) {
+// Whether a time counts for a track's required quad. Rows saved before model
+// data was collected carry no model and are kept.
+export function quadAllowed(row, quad) {
+  if (!quad) return true;
+  if (row.model == null && row.modelId == null) return true;
+  if (row.modelId != null && (quad.ids || []).includes(row.modelId)) return true;
+  return row.model != null && norm(row.model) === norm(quad.name);
+}
+
+export function computeStandings(rows, teams, aliases = {}, quad = null) {
   const best = new Map();
   for (const r of rows) {
+    if (!quadAllowed(r, quad)) continue;
     const k = norm(r.name);
     if (k && (!best.has(k) || best.get(k).time > r.time)) best.set(k, r);
   }

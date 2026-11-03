@@ -8,6 +8,7 @@ import { appendHistory, getRecord, putRecord } from "./store.js";
 export const findTrack = (id) => TRACKS.find((t) => String(t.id) === String(id)) || null;
 export const teamsFor = (track) => track.teams || TEAMS;
 export const lockTime = (track) => (track.locksAt ? Date.parse(track.locksAt) : Infinity);
+export const standingsFor = (track, rows) => computeStandings(rows, teamsFor(track), ALIASES, track.quad || null);
 
 // "upcoming": no leaderboard yet, tab grayed out
 // "live":     fetched every hour until its lock time
@@ -44,14 +45,14 @@ export async function syncTrack(env, track, now, { force = false, staleMs = 0, f
 
   if (!force && record && now - Date.parse(record.fetchedAt) < staleMs) return { action: "skip-fresh", record };
 
-  const rows = await fetchLeaderboard(track.leaderboardUrl, fetchImpl);
+  const { rows, source, sourceError } = await fetchLeaderboard(track.leaderboardUrl, fetchImpl);
   const fetchedAt = new Date(now).toISOString();
-  const next = { trackId: track.id, status: "live", fetchedAt, rowCount: rows.length, rows };
+  const next = { trackId: track.id, status: "live", fetchedAt, rowCount: rows.length, rows, source, sourceError };
   // A refresh that was still running when the lock happened must not overwrite it.
   const current = await getRecord(env, track.id);
   if (current?.status === "locked") return { action: "skip-locked", record: current };
   await putRecord(env, track.id, next);
-  await appendHistory(env, track.id, compactSnapshot(computeStandings(rows, teamsFor(track), ALIASES), fetchedAt));
+  await appendHistory(env, track.id, compactSnapshot(standingsFor(track, rows), fetchedAt));
   return { action: "refreshed", record: next };
 }
 
@@ -62,12 +63,12 @@ export async function lockTrack(env, track, record, now, { fetchImpl, attempts =
   const deadline = lockTime(track);
   const lateBy = now - deadline;
   const inWindow = lateBy < FINAL_FETCH_WINDOW_SECONDS * 1000;
-  let rows = null, fetchedAt = null, lockMethod = null;
+  let rows = null, fetchedAt = null, lockMethod = null, source = record?.source || null;
 
   if (allowFetch && inWindow) {
     for (let i = 0; i < attempts && !rows; i++) {
       try {
-        rows = await fetchLeaderboard(track.leaderboardUrl, fetchImpl);
+        ({ rows, source } = await fetchLeaderboard(track.leaderboardUrl, fetchImpl));
         fetchedAt = new Date(now).toISOString();
         lockMethod = "final-fetch";
       } catch (err) {
@@ -87,7 +88,7 @@ export async function lockTrack(env, track, record, now, { fetchImpl, attempts =
   if (current?.status === "locked") return { action: "skip-locked", record: current };
 
   const teams = teamsFor(track);
-  const standings = computeStandings(rows, teams, ALIASES);
+  const standings = standingsFor(track, rows);
   const lockedAt = new Date(now).toISOString();
   const locked = {
     trackId: track.id,
@@ -96,6 +97,8 @@ export async function lockTrack(env, track, record, now, { fetchImpl, attempts =
     lockedAt,
     locksAt: track.locksAt,
     lockMethod,
+    source,
+    quad: track.quad || null,
     rowCount: rows.length,
     rows,
     teams, // roster as it stood at the lock

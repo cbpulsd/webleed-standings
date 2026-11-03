@@ -4,14 +4,17 @@
 //   GET  /api/tracks                          -> every track with its status, for the tabs
 //   GET  /api/tracks/:id                      -> one track's standings
 //   GET  /api/tracks/:id/history              -> that track's hourly snapshots
+//   GET  /api/health/source/:id               -> read-only check that the game endpoint answers (cached 5 min)
 //   POST /api/admin/tracks/:id/refresh|lock   -> manual controls (needs the ADMIN_TOKEN secret)
 //
 // The page in /public is served as static files and only reads from /api.
 
 import { ALIASES, LATE_LOCK_AFTER_MINUTES, LEAGUE, NO_VISIT_REFRESH_BEFORE_LOCK_MINUTES, SEASON, STALE_MINUTES, TRACKS } from "./config.js";
-import { computeStandings } from "./standings.js";
+import { norm } from "./standings.js";
+import { fetchGameLeaderboard, gameRows } from "./gameapi.js";
+import { trackIdFromUrl } from "./leaderboard.js";
 import { getHistory, getRecord } from "./store.js";
-import { findTrack, lockTrack, lockTime, runSchedule, syncTrack, teamsFor, trackStatus } from "./sync.js";
+import { findTrack, lockTrack, lockTime, runSchedule, standingsFor, syncTrack, teamsFor, trackStatus } from "./sync.js";
 
 export default {
   async fetch(request, env, ctx) {
@@ -91,6 +94,34 @@ export async function route(request, url, env, ctx, now, deps = {}) {
     return json(detail(track, record, now), 200, record?.status === "locked" ? "public, max-age=3600" : "public, max-age=60");
   }
 
+  // Read-only source check: calls the game endpoint once, saves nothing.
+  if (request.method === "GET" && parts[1] === "health" && parts[2] === "source" && parts.length === 4) {
+    const track = findTrack(parts[3]);
+    if (!track?.leaderboardUrl) return json({ error: "no such live track" }, 404, "no-store");
+    const cache = typeof caches !== "undefined" ? caches.default : null;
+    const key = new Request(`https://health.cache/source/${track.id}`);
+    const hit = cache && (await cache.match(key));
+    if (hit) return hit;
+    let body;
+    try {
+      const rows = gameRows(await fetchGameLeaderboard({ trackId: trackIdFromUrl(track.leaderboardUrl) }, deps.fetchImpl));
+      const names = new Set(rows.map((r) => norm(r.name)));
+      const roster = teamsFor(track).flatMap((t) => [t.captain, ...t.pilots]);
+      const models = rows.reduce((a, r) => ((a[r.model || r.modelId || "unknown"] = (a[r.model || r.modelId || "unknown"] || 0) + 1), a), {});
+      body = {
+        ok: rows.length > 0, source: "game", checkedAt: new Date(now).toISOString(), count: rows.length, models,
+        withUserIds: rows.filter((r) => r.userId != null).length,
+        rosterFoundByName: roster.filter((n) => names.has(norm(n))).length, rosterTotal: roster.length,
+        top: rows.slice(0, 3).map(({ rank, time, name, model }) => ({ rank, time, name, model })),
+      };
+    } catch (err) {
+      body = { ok: false, source: "game", checkedAt: new Date(now).toISOString(), error: String(err?.message || err).slice(0, 300) };
+    }
+    const res = json(body, 200, "public, max-age=300");
+    if (cache) ctx.waitUntil(cache.put(key, res.clone()));
+    return res;
+  }
+
   // Manual controls
   if (request.method === "POST" && parts[1] === "admin" && parts[2] === "tracks" && parts.length === 5) {
     if (!env.ADMIN_TOKEN || request.headers.get("authorization") !== `Bearer ${env.ADMIN_TOKEN}`) {
@@ -129,11 +160,13 @@ function summary(track, record, now) {
 function detail(track, record, now) {
   const base = summary(track, record, now);
   if (!record) return { track: base, standings: null };
-  const standings = record.status === "locked" ? record.standings : computeStandings(record.rows, teamsFor(track), ALIASES);
+  const standings = record.status === "locked" ? record.standings : standingsFor(track, record.rows);
   return {
     track: base,
     rowCount: record.rowCount,
     lockMethod: record.lockMethod || null,
+    source: record.source || "page",
+    quad: (record.status === "locked" ? record.quad : track.quad)?.name || null,
     nextUpdateAt: base.status === "live" ? nextHour(now, lockTime(track)) : null,
     standings,
   };
