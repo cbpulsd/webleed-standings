@@ -171,3 +171,29 @@ test("old page's /data route still answers from saved times", async () => {
   assert.equal(body.rows[0].name, "TMAD");
   assert.ok(body.fetchedAt);
 });
+
+test("timers use cron syntax Cloudflare accepts and land on each lock time", async () => {
+  const { readFileSync } = await import("node:fs");
+  const cfg = readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8").replace(/^\s*\/\/.*$/gm, "");
+  const crons = JSON.parse(cfg).triggers.crons;
+  const DAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+  const parsed = crons.map((c) => {
+    const f = c.split(/\s+/);
+    assert.equal(f.length, 5, `${c}: five fields`);
+    // Cloudflare weekdays: 1-7 (Sunday = 1) or names; 0 is rejected.
+    for (const part of f[4].split(/[,-]/)) {
+      if (part === "*" || part === "?") continue;
+      assert.ok(DAYS.includes(part.toUpperCase().replace(/L$|#\d$/, "")) || /^[1-7]$/.test(part), `${c}: weekday "${part}" isn't valid on Cloudflare`);
+    }
+    return f;
+  });
+  const fires = (f, t) => {
+    const d = new Date(t);
+    const ok = (field, v) => field === "*" || field.split(",").some((x) => +x === v);
+    const dow = f[4] === "*" || f[4].split(",").some((x) => (DAYS.indexOf(x.toUpperCase()) >= 0 ? DAYS.indexOf(x.toUpperCase()) : +x - 1) === d.getUTCDay());
+    return ok(f[0], d.getUTCMinutes()) && ok(f[1], d.getUTCHours()) && dow;
+  };
+  for (const t of TRACKS.filter((x) => x.locksAt)) {
+    assert.ok(parsed.some((f) => fires(f, Date.parse(t.locksAt))), `no timer fires at ${t.name}'s lock time ${t.locksAt}`);
+  }
+});

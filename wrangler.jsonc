@@ -16,9 +16,9 @@
 
   // Times are UTC.
   //   "0 * * * *"   every hour on the hour: refresh live tracks
-  //   "59 4 * * 0"  Saturday 11:59 PM Eastern (EST, UTC-5): lock tracks whose deadline it is
-  //                 (during daylight time, Mar-Nov, Eastern 11:59 PM is "59 3 * * 0")
-  "triggers": { "crons": ["0 * * * *", "59 4 * * 0"] },
+  //   "59 4 * * SUN"  Saturday 11:59 PM Eastern (EST, UTC-5): lock tracks whose deadline it is
+  // Cloudflare numbers weekdays 1-7 with Sunday = 1 (not 0), so use day names.
+  "triggers": { "crons": ["0 * * * *", "59 4 * * SUN"] },
 
   "observability": { "enabled": true }
 }

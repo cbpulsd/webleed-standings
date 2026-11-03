@@ -6,7 +6,7 @@ Team standings for the weBLEEDfpv Velocidrone league: each team's combined time 
 
 - **Backend** (`src/`, a Cloudflare Worker):
   - An hourly timer (`0 * * * *` UTC) fetches the Velocidrone leaderboard for each live track and saves it in Workers KV.
-  - A second timer runs Saturdays at 11:59 PM Eastern (`59 4 * * 0` UTC). Any track whose `locksAt` has arrived gets its final standings saved and is marked locked. A locked track is never fetched again.
+  - A second timer runs Saturdays at 11:59 PM Eastern (`59 4 * * SUN` UTC). Any track whose `locksAt` has arrived gets its final standings saved and is marked locked. A locked track is never fetched again.
   - If that run happens more than 10 minutes late, the lock uses the last times saved *before* the deadline, so late times never count.
   - Locked tracks keep a frozen copy of the roster and standings, so later roster fixes don't change past results.
   - Every hourly run also adds a small snapshot to that track's history, for charts later.
@@ -30,7 +30,7 @@ The admin routes stay off until an `ADMIN_TOKEN` secret is set on the Worker.
 
 - **Open the next track:** add its `leaderboardUrl` and `locksAt` to its entry in `TRACKS`.
 - **Add a track 7+:** append `{ id: 7, name: "Track 7" }`.
-- **Change a lock time:** edit `locksAt`. It's a UTC time; Eastern is UTC−5 in winter, so Saturday 11:59 PM Eastern is `…T04:59:00Z` on the Sunday. A lock time needs a timer that lands on it: Saturdays 11:59 PM Eastern and every hour on the hour are set up in `wrangler.jsonc`. If daylight time starts mid-season (Mar 14, 2027), change the Saturday timer to `59 3 * * 0`.
+- **Change a lock time:** edit `locksAt`. It's a UTC time; Eastern is UTC−5 in winter, so Saturday 11:59 PM Eastern is `…T04:59:00Z` on the Sunday. A lock time needs a timer that lands on it: Saturdays 11:59 PM Eastern and every hour on the hour are set up in `wrangler.jsonc`. Cloudflare numbers weekdays 1–7 with Sunday = 1, so write day names (`SUN`) in timers.
 - **Fix a pilot's name:** edit `TEAMS`. Live tracks pick it up on the next page load; locked tracks don't change.
 - **Pilot uses a different name on Velocidrone:** add it to `ALIASES`.
 - **Roster change for one track only:** give that track its own `teams` list.
