@@ -9,7 +9,9 @@
 // The page in /public is served as static files and only reads from /api.
 
 import { ALIASES, LATE_LOCK_AFTER_MINUTES, LEAGUE, NO_VISIT_REFRESH_BEFORE_LOCK_MINUTES, SEASON, STALE_MINUTES, TRACKS } from "./config.js";
-import { computeStandings } from "./standings.js";
+import { computeStandings, norm } from "./standings.js";
+import { fetchGameLeaderboard } from "./gameapi.js";
+import { TEAMS } from "./config.js";
 import { getHistory, getRecord } from "./store.js";
 import { findTrack, lockTrack, lockTime, runSchedule, syncTrack, teamsFor, trackStatus } from "./sync.js";
 
@@ -45,6 +47,29 @@ export async function route(request, url, env, ctx, now, deps = {}) {
   }
 
   if (parts[0] !== "api") return new Response("Not found", { status: 404 });
+
+  // TEMPORARY test-branch probe (never merged to main): one read-only call to the game endpoint.
+  if (request.method === "GET" && parts[1] === "_probe" && parts[2] === "game") {
+    const trackId = url.searchParams.get("track") || "2207";
+    const results = [];
+    for (const v of (url.searchParams.get("v") || "1.16").split(",")) {
+      try {
+        const data = await fetchGameLeaderboard({ trackId, simVersion: v });
+        const times = data.tracktimes || [];
+        const names = new Set(times.map((t) => norm(t.playername)));
+        const roster = TEAMS.flatMap((t) => [t.captain, ...t.pilots]);
+        const models = times.reduce((a, t) => ((a[t.model_name || t.model_id] = (a[t.model_name || t.model_id] || 0) + 1), a), {});
+        results.push({
+          simVersion: v, success: data.success, message: data.message || null, count: times.length,
+          fields: times[0] ? Object.keys(times[0]) : [], first: times.slice(0, 3), models,
+          rosterFound: roster.filter((n) => names.has(norm(n))).length, rosterTotal: roster.length,
+        });
+      } catch (e) {
+        results.push({ simVersion: v, error: String(e.message || e) });
+      }
+    }
+    return json({ trackId, results }, 200, "no-store");
+  }
 
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors() });
 
