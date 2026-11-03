@@ -38,6 +38,11 @@ export function computeStandings(rows, teams, aliases = {}, quad = null) {
             posted: !!hit,
             time: hit ? hit.time : NO_TIME,
             lb: hit ? hit.rank : null,
+            // As recorded on Velocidrone; null when unknown (page source has no IDs).
+            velocidroneName: hit ? hit.name : null,
+            userId: hit?.userId ?? null,
+            model: hit?.model ?? null,
+            modelId: hit?.modelId ?? null,
           };
         })
         .sort((a, b) => a.time - b.time || a.name.localeCompare(b.name));
@@ -60,6 +65,7 @@ export function compactSnapshot(standings, at) {
     at,
     teams: standings.teams.map((t) => [t.sponsor, t.total, t.posted]),
     pilots: Object.fromEntries(standings.teams.flatMap((t) => t.pilots.filter((p) => p.posted).map((p) => [p.name, p.time]))),
+    ids: Object.fromEntries(standings.teams.flatMap((t) => t.pilots.filter((p) => p.userId != null).map((p) => [p.name, p.userId]))),
   };
 }
 

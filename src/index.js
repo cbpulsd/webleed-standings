@@ -10,7 +10,7 @@
 // The page in /public is served as static files and only reads from /api.
 
 import { ALIASES, LATE_LOCK_AFTER_MINUTES, LEAGUE, NO_VISIT_REFRESH_BEFORE_LOCK_MINUTES, SEASON, STALE_MINUTES, TRACKS } from "./config.js";
-import { norm } from "./standings.js";
+import { computeStandings, norm, quadAllowed } from "./standings.js";
 import { fetchGameLeaderboard, gameRows } from "./gameapi.js";
 import { trackIdFromUrl } from "./leaderboard.js";
 import { getHistory, getRecord } from "./store.js";
@@ -95,27 +95,46 @@ export async function route(request, url, env, ctx, now, deps = {}) {
   }
 
   // Read-only source check: calls the game endpoint once, saves nothing.
+  //   ?velocidroneTrack=2174  check another Velocidrone track ID (e.g. a tryout track)
+  //   ?pilot=xer              show exactly how one roster name matches
   if (request.method === "GET" && parts[1] === "health" && parts[2] === "source" && parts.length === 4) {
     const track = findTrack(parts[3]);
     if (!track?.leaderboardUrl) return json({ error: "no such live track" }, 404, "no-store");
+    const vdTrack = /^\d{1,7}$/.test(url.searchParams.get("velocidroneTrack") || "") ? url.searchParams.get("velocidroneTrack") : trackIdFromUrl(track.leaderboardUrl);
+    const pilot = (url.searchParams.get("pilot") || "").slice(0, 40);
     const cache = typeof caches !== "undefined" ? caches.default : null;
-    const key = new Request(`https://health.cache/source/${track.id}`);
+    const key = new Request(`https://health.cache/source/${track.id}/${vdTrack}/${encodeURIComponent(pilot)}`);
     const hit = cache && (await cache.match(key));
     if (hit) return hit;
     let body;
     try {
-      const rows = gameRows(await fetchGameLeaderboard({ trackId: trackIdFromUrl(track.leaderboardUrl) }, deps.fetchImpl));
-      const names = new Set(rows.map((r) => norm(r.name)));
-      const roster = teamsFor(track).flatMap((t) => [t.captain, ...t.pilots]);
+      const rows = gameRows(await fetchGameLeaderboard({ trackId: vdTrack }, deps.fetchImpl));
+      const standings = computeStandings(rows, teamsFor(track), ALIASES, track.quad || null);
+      const pilots = standings.teams.flatMap((t) => t.pilots.map((p) => ({ ...p, team: t.sponsor })));
       const models = rows.reduce((a, r) => ((a[r.model || r.modelId || "unknown"] = (a[r.model || r.modelId || "unknown"] || 0) + 1), a), {});
       body = {
-        ok: rows.length > 0, source: "game", checkedAt: new Date(now).toISOString(), count: rows.length, models,
+        ok: rows.length > 0, source: "game", velocidroneTrack: vdTrack, checkedAt: new Date(now).toISOString(), count: rows.length, models,
         withUserIds: rows.filter((r) => r.userId != null).length,
-        rosterFoundByName: roster.filter((n) => names.has(norm(n))).length, rosterTotal: roster.length,
+        rosterPosted: pilots.filter((p) => p.posted).length, rosterTotal: pilots.length,
+        rosterMissing: pilots.filter((p) => !p.posted).map((p) => `${p.name} (${p.team})`),
         top: rows.slice(0, 3).map(({ rank, time, name, model }) => ({ rank, time, name, model })),
       };
+      if (pilot) {
+        const k = norm(pilot);
+        const target = ALIASES[k] || k;
+        const raw = rows.filter((r) => norm(r.name) === target || norm(r.name) === k);
+        body.pilot = {
+          rosterName: pilot,
+          matchKey: target,
+          velocidroneRows: raw.map((r) => ({
+            name: r.name, nameCodes: [...r.name].map((c) => c.codePointAt(0).toString(16)),
+            time: r.time, rank: r.rank, model: r.model, modelId: r.modelId, userId: r.userId, countsForQuad: quadAllowed(r, track.quad || null),
+          })),
+          inStandings: pilots.find((p) => norm(p.name) === k) || null,
+        };
+      }
     } catch (err) {
-      body = { ok: false, source: "game", checkedAt: new Date(now).toISOString(), error: String(err?.message || err).slice(0, 300) };
+      body = { ok: false, source: "game", velocidroneTrack: vdTrack, checkedAt: new Date(now).toISOString(), error: String(err?.message || err).slice(0, 300) };
     }
     const res = json(body, 200, "public, max-age=300");
     if (cache) ctx.waitUntil(cache.put(key, res.clone()));

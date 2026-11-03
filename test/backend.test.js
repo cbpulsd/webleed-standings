@@ -311,10 +311,46 @@ test("source check link reports the game endpoint without saving anything", asyn
   assert.equal(ok.ok, true);
   assert.equal(ok.count, 2);
   assert.equal(ok.withUserIds, 2);
-  assert.equal(ok.rosterFoundByName, 2);
+  assert.equal(ok.rosterPosted, 1, "Senko's Tiny Hawk time doesn't count");
+  assert.equal(ok.rosterMissing.length, 49);
   assert.equal(env.STANDINGS.writes, 0);
   site.game = false;
   const bad = await get(env, "/api/health/source/1", LOCK - HOUR, { fetchImpl: site.fetch });
   assert.equal(bad.ok, false);
   assert.match(bad.error, /419/);
+});
+
+
+test("standings record each pilot's Velocidrone name, pilot ID and model ID", async () => {
+  const env = { STANDINGS: new MemoryKV() };
+  const site = fakeSite([[1, "70.000", "TMAD"], [2, "75.000", "xer \u200e"]]);
+  site.game = true;
+  await runSchedule(env, LOCK - HOUR, { fetchImpl: site.fetch, retryDelayMs: 0 });
+  const body = await get(env, "/api/tracks/1", LOCK - HOUR + 60_000, {});
+  const xer = body.standings.teams.find((t) => t.sponsor === "WREKD").pilots.find((p) => p.name === "xer");
+  assert.equal(xer.userId, 1001);
+  assert.equal(xer.modelId, 121);
+  assert.equal(xer.model, "Hummingbird RS");
+  assert.equal(xer.velocidroneName, "xer \u200e");
+  // ...and they're kept in the frozen copy at the lock, and in the hourly history.
+  await runSchedule(env, LOCK + 1000, { fetchImpl: site.fetch, retryDelayMs: 0 });
+  const locked = await env.STANDINGS.get("track:1", "json");
+  assert.equal(locked.standings.teams.find((t) => t.sponsor === "WREKD").pilots.find((p) => p.name === "xer").userId, 1001);
+  const hist = await env.STANDINGS.get("history:1", "json");
+  assert.equal(hist.at(-1).ids.xer, 1001);
+});
+
+test("check link can inspect another Velocidrone track and one pilot's name match", async () => {
+  const env = { STANDINGS: new MemoryKV() };
+  const site = fakeSite([[1, "70.000", "TMAD"], [2, "176.908", "xer \u200e"]]);
+  site.game = true;
+  let asked = null;
+  const spy = async (url, init) => { if (String(url).includes("getLeaderBoard")) asked = init.body; return site.fetch(url, init); };
+  const r = await get(env, "/api/health/source/1?velocidroneTrack=2174&pilot=xer", LOCK - HOUR, { fetchImpl: spy });
+  assert.equal(r.velocidroneTrack, "2174");
+  assert.ok(asked, "game endpoint called");
+  assert.equal(r.pilot.velocidroneRows[0].name, "xer \u200e");
+  assert.deepEqual(r.pilot.velocidroneRows[0].nameCodes, ["78", "65", "72", "20", "200e"]);
+  assert.equal(r.pilot.inStandings.posted, true);
+  assert.equal(r.pilot.inStandings.time, 176.908);
 });
