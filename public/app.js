@@ -267,9 +267,16 @@
         </tr>`).join("")}</tbody>
       </table></div>`;
 
-    const tierTables = d.tierResults.map((t) => `
-      <section class="tier" aria-label="Tier ${t.tier}">
-        <div class="sec-head"><h2>Tier ${t.tier}</h2><span>${t.racesRun ? `${t.racesRun} of ${d.racesPerTier} races run` : `${d.racesPerTier} races`}</span></div>
+    const fold = (key, title, meta, inner) => `
+      <details class="fold" data-fold="${key}"${isOpen(key) ? " open" : ""}>
+        <summary class="sec-head"><h2>${title}</h2><span>${meta}</span></summary>
+        ${inner}
+      </details>`;
+    const leaderOf = (list) => (list[0] && list[0].place === 1 ? `Leader: Team ${esc(list[0].sponsor)} (${list[0].total})` : "");
+    const metaJoin = (...parts) => parts.filter(Boolean).join(" · ");
+
+    const tierTables = d.tierResults.map((t) => fold(`tier-${t.tier}`, `Tier ${t.tier}`,
+      metaJoin(t.racesRun ? `${t.racesRun} of ${d.racesPerTier} races run` : `${d.racesPerTier} races`, leaderOf(t.entries)), `
         <div class="table-wrap"><table class="overall grid">
           <thead><tr><th class="team-col" scope="col">Team · Pilot</th>${Array.from({ length: d.racesPerTier }, (_, i) => `<th class="num${i === 0 ? " wk-start" : ""}" scope="col">R${i + 1}</th>`).join("")}<th class="num tot" scope="col">Total</th></tr></thead>
           <tbody>${t.entries.map((e) => `<tr>
@@ -277,14 +284,22 @@
             ${e.points.map((p, i) => `<td class="num${i === 0 ? " wk-start" : ""}"${e.positions[i] ? ` title="Finished ${ordinal(e.positions[i])}"` : ""}>${pts(p)}</td>`).join("")}
             <td class="num tot">${pts(e.total)}</td>
           </tr>`).join("")}</tbody>
-        </table></div>
-      </section>`).join("");
+        </table></div>`)).join("");
 
     el.innerHTML = `
       <p class="races-note"><b>Race day: ${esc(day)}.</b> Each team races four of its five pilots, one per tier, and sits one. Every tier runs ${d.racesPerTier} races. Points by finishing position: ${pointsLine}.${anyResults ? "" : " Lineups and results appear here on race day."}</p>
-      <section aria-label="Team race points"><div class="sec-head"><h2>Team race points</h2></div>${summary}</section>
+      ${fold("summary", "Team race points", leaderOf(d.teams), summary)}
       ${tierTables}`;
   }
+
+  // Which race sections are open. Team race points starts open, tiers closed;
+  // a viewer's choice is kept when the data refreshes.
+  const foldState = { summary: true };
+  const isOpen = (key) => foldState[key] ?? false;
+  $("viewRaces").addEventListener("toggle", (e) => {
+    const k = e.target?.dataset?.fold;
+    if (k) foldState[k] = e.target.open;
+  }, true);
 
   // ---------- loading ----------
   async function load() {
