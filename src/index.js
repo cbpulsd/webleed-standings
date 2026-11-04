@@ -4,6 +4,7 @@
 //   GET  /api/tracks                          -> every track with its status, for the tabs
 //   GET  /api/tracks/:id                      -> one track's standings
 //   GET  /api/tracks/:id/history              -> that track's hourly snapshots
+//   GET  /api/tracks/:id/races                -> that track's race day: lineups, 4 tiers x 8 races, points
 //   GET  /api/overall                         -> season table: Smash and Race points per team per week
 //   GET  /api/health/source/:id               -> read-only check that the game endpoint answers (cached 5 min)
 //   POST /api/admin/tracks/:id/refresh|lock   -> manual controls (needs the ADMIN_TOKEN secret)
@@ -12,6 +13,7 @@
 
 import { ALIASES, LATE_LOCK_AFTER_MINUTES, LEAGUE, TEAMS, NO_VISIT_REFRESH_BEFORE_LOCK_MINUTES, SEASON, STALE_MINUTES, TRACKS } from "./config.js";
 import { computeStandings, norm, quadAllowed } from "./standings.js";
+import { computeRaces } from "./races.js";
 import { fetchGameLeaderboard, gameRows } from "./gameapi.js";
 import { trackIdFromUrl } from "./leaderboard.js";
 import { getHistory, getRecord } from "./store.js";
@@ -66,6 +68,14 @@ export async function route(request, url, env, ctx, now, deps = {}) {
   // /api/overall
   if (request.method === "GET" && parts[1] === "overall" && parts.length === 2) {
     return json(await overall(env, now), 200, "public, max-age=60");
+  }
+
+  // /api/tracks/:id/races
+  if (request.method === "GET" && parts[1] === "tracks" && parts.length === 4 && parts[3] === "races") {
+    const track = findTrack(parts[2]);
+    if (!track) return json({ error: "no such track" }, 404, "no-store");
+    const saved = await env.STANDINGS.get(`races:${track.id}`, "json");
+    return json({ track: track.id, ...computeRaces(track, saved, teamsFor(track)) }, 200, "public, max-age=60");
   }
 
   // /api/tracks/:id and /api/tracks/:id/history

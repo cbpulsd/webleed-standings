@@ -70,6 +70,7 @@
     if (id === state.current && state.data) return;
     state.current = id;
     state.data = null;
+    state.races = null;
     try { history.replaceState(null, "", id === OVERALL ? "#overall" : "#track-" + id); } catch (e) {}
     renderTabs();
     renderHeader();
@@ -83,7 +84,7 @@
     document.querySelector(".views").hidden = o;
     $("viewOverall").hidden = !o;
     document.querySelector(".wrap").classList.toggle("wide", o);
-    if (o) { $("viewTeams").hidden = true; $("viewPilots").hidden = true; }
+    if (o) { $("viewTeams").hidden = true; $("viewPilots").hidden = true; $("viewRaces").hidden = true; }
     else showView(state.view);
   }
 
@@ -211,11 +212,79 @@
     state.view = v;
     $("viewTeamsBtn").setAttribute("aria-selected", v === "teams");
     $("viewPilotsBtn").setAttribute("aria-selected", v === "pilots");
+    $("viewRacesBtn").setAttribute("aria-selected", v === "races");
+    $("viewRaces").hidden = v !== "races";
+    if (v === "races" && !isOverall()) loadRaces();
     $("viewTeams").hidden = v !== "teams";
     $("viewPilots").hidden = v !== "pilots";
   }
   $("viewTeamsBtn").addEventListener("click", () => showView("teams"));
   $("viewPilotsBtn").addEventListener("click", () => showView("pilots"));
+  $("viewRacesBtn").addEventListener("click", () => showView("races"));
+
+  // ---------- races ----------
+  const ordinal = (n) => n + (n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] || "th");
+  const raceDayFmt = new Intl.DateTimeFormat([], { weekday: "long", month: "short", day: "numeric" });
+
+  async function loadRaces() {
+    const id = state.current;
+    if (id == null || isOverall()) return;
+    if (!state.races || state.races.id !== id) { state.races = { id, data: null, error: null }; renderRaces(); }
+    try {
+      const res = await api(`/tracks/${id}/races`);
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+      if (state.stopped || state.current !== id) return;
+      state.races = { id, data: body, error: null };
+    } catch (e) {
+      if (state.current !== id) return;
+      state.races = { id, data: state.races?.data || null, error: e.message };
+    }
+    renderRaces();
+  }
+
+  function renderRaces() {
+    const el = $("viewRaces");
+    const r = state.races;
+    if (!r || (!r.data && !r.error)) { el.innerHTML = `<div class="empty">Loading race day…</div>`; return; }
+    if (!r.data) { el.innerHTML = `<div class="empty">Couldn't load race results (${esc(r.error)}).</div>`; return; }
+    const d = r.data;
+    const tiers = d.tierResults.map((t) => t.tier);
+    const day = d.raceDay ? raceDayFmt.format(new Date(d.raceDay + "T12:00:00")) : "Sunday";
+    const anyResults = d.tierResults.some((t) => t.racesRun > 0);
+    const pointsLine = d.points.map((p, i) => `${ordinal(i + 1)} ${p}`).join(" · ");
+    const place = (p) => (p != null ? `<span class="opos">${p}</span>` : "");
+    const pilotLabel = (p) => (p ? esc(p) : '<span class="tbd">Pilot TBD</span>');
+
+    const summary = `
+      <div class="table-wrap"><table class="overall grid">
+        <thead><tr><th class="team-col" scope="col">Team</th>${tiers.map((t) => `<th class="num wk-start" scope="col">Tier ${t}</th>`).join("")}<th class="num tot" scope="col">Total</th><th class="wk-start sit" scope="col">Sitting out</th></tr></thead>
+        <tbody>${d.teams.map((t) => `<tr>
+          <th class="team-col" scope="row"><div class="ocell">${place(t.place)}<span class="oname"><b>Team ${esc(t.sponsor)}</b><small>Capt ${esc(t.captain)}</small></span></div></th>
+          ${tiers.map((ti) => `<td class="num wk-start">${pts(t.byTier[ti])}</td>`).join("")}
+          <td class="num tot">${pts(t.total)}</td>
+          <td class="wk-start sit">${t.sitting ? esc(t.sitting) : '<span class="tbd">TBD</span>'}</td>
+        </tr>`).join("")}</tbody>
+      </table></div>`;
+
+    const tierTables = d.tierResults.map((t) => `
+      <section class="tier" aria-label="Tier ${t.tier}">
+        <div class="sec-head"><h2>Tier ${t.tier}</h2><span>${t.racesRun ? `${t.racesRun} of ${d.racesPerTier} races run` : `${d.racesPerTier} races`}</span></div>
+        <div class="table-wrap"><table class="overall grid">
+          <thead><tr><th class="team-col" scope="col">Team · Pilot</th>${Array.from({ length: d.racesPerTier }, (_, i) => `<th class="num${i === 0 ? " wk-start" : ""}" scope="col">R${i + 1}</th>`).join("")}<th class="num tot" scope="col">Total</th></tr></thead>
+          <tbody>${t.entries.map((e) => `<tr>
+            <th class="team-col" scope="row"><div class="ocell">${place(e.place)}<span class="oname"><b>Team ${esc(e.sponsor)}</b><small>${pilotLabel(e.pilot)}</small></span></div></th>
+            ${e.points.map((p, i) => `<td class="num${i === 0 ? " wk-start" : ""}"${e.positions[i] ? ` title="Finished ${ordinal(e.positions[i])}"` : ""}>${pts(p)}</td>`).join("")}
+            <td class="num tot">${pts(e.total)}</td>
+          </tr>`).join("")}</tbody>
+        </table></div>
+      </section>`).join("");
+
+    el.innerHTML = `
+      <p class="races-note"><b>Race day: ${esc(day)}.</b> Each team races four of its five pilots, one per tier, and sits one. Every tier runs ${d.racesPerTier} races. Points by finishing position: ${pointsLine}.${anyResults ? "" : " Lineups and results appear here on race day."}</p>
+      <section aria-label="Team race points"><div class="sec-head"><h2>Team race points</h2></div>${summary}</section>
+      ${tierTables}`;
+  }
 
   // ---------- loading ----------
   async function load() {
@@ -242,6 +311,7 @@
         renderStatus();
         renderStandings();
         schedulePoll();
+        if (state.view === "races" && !isOverall()) loadRaces();
       }
     }
   }

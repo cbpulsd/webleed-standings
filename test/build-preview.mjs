@@ -36,6 +36,7 @@ ${css}
     <b>Test preview</b>
     <span class="note">Sample Track 1 times from Nov 2. Not connected to the live site. Pick a moment in the week to see how the page looks then:</span>
     <span class="seg" id="scenarios"></span>
+    <span class="note" id="scenarioNote" style="flex-basis:100%"></span>
   </div>
 </div>
 <div id="app"></div>
@@ -59,6 +60,9 @@ ${css}
     document.getElementById("app").innerHTML = MARKUP;
     try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
     new Function(APP)();
+    const sc = P.scenarios[name];
+    document.getElementById("scenarioNote").textContent = sc.note || "";
+    if (sc.view === "races") setTimeout(() => document.getElementById("viewRacesBtn")?.click(), 300);
   }
   bar.addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) boot(b.dataset.k); });
   boot("live");

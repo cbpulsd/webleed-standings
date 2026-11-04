@@ -26,6 +26,7 @@ export const LATE_LOCK_AFTER_MINUTES = 30;
 //            Must line up with a timer in wrangler.jsonc (Saturdays 11:59 PM Eastern is set up).
 //   quad: the required quad model. Only times on it count. { name, ids } — name as shown on
 //         the leaderboard page, ids as Velocidrone's model IDs (121 = Hummingbird RS).
+//   raceDay: the Sunday race day for this track's week (YYYY-MM-DD, Eastern).
 //   teams: optional roster for just this track (defaults to TEAMS below).
 export const TRACKS = [
   {
@@ -34,6 +35,7 @@ export const TRACKS = [
     leaderboardUrl: "https://www.velocidrone.com/leaderboard/29/2207/All",
     locksAt: "2026-11-08T04:59:00Z", // Sat Nov 7, 11:59 PM Eastern
     quad: { name: "Hummingbird RS", ids: [121] },
+    raceDay: "2026-11-08",
   },
   { id: 2, name: "Track 2" },
   { id: 3, name: "Track 3" },
@@ -41,6 +43,14 @@ export const TRACKS = [
   { id: 5, name: "Track 5" },
   { id: 6, name: "Track 6" },
 ];
+
+// Race day: each team races four of its five pilots, one per tier, and sits one.
+// Every tier runs racesPerTier races; points[i] is what finishing position i+1 earns.
+export const RACES = {
+  tiers: 4,
+  racesPerTier: 8,
+  points: [10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
+};
 
 // Season roster: captain plus four drafted pilots per team.
 export const TEAMS = [

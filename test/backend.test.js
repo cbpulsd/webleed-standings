@@ -380,3 +380,44 @@ test("overall table ranks by total once points are saved", async () => {
   assert.deepEqual(body.teams[1].weeks[1], { smash: 6, race: null }, "bad values are ignored");
   assert.equal(body.teams[2].position, null);
 });
+
+
+test("races: 4 tiers x 8 races per team, blank until race day", async () => {
+  const env = { STANDINGS: new MemoryKV() };
+  const body = await get(env, "/api/tracks/1/races", LOCK - HOUR, {});
+  assert.equal(body.raceDay, "2026-11-08");
+  assert.equal(body.tierResults.length, 4);
+  assert.equal(body.racesPerTier, 8);
+  assert.deepEqual(body.points, [10, 9, 8, 7, 6, 5, 4, 3, 2, 1]);
+  for (const tier of body.tierResults) {
+    assert.equal(tier.entries.length, 10);
+    assert.equal(tier.racesRun, 0);
+    assert.ok(tier.entries.every((e) => e.pilot === null && e.total === null && e.points.length === 8 && e.points.every((p) => p === null)));
+  }
+  assert.deepEqual(body.teams.map((t) => t.sponsor), TEAMS.map((t) => t.sponsor));
+  assert.ok(body.teams.every((t) => t.total === null && t.sitting === null && t.place === null));
+});
+
+test("races: finishing positions become points; tiers and teams rank by points", async () => {
+  const env = { STANDINGS: new MemoryKV() };
+  await env.STANDINGS.put("races:1", JSON.stringify({
+    lineup: { WREKD: { tiers: { 1: "Blastaa" }, sitting: "xer" } },
+    results: { 1: { 1: { WREKD: 1, "EMAX USA": 2 }, 2: { WREKD: 3, "EMAX USA": 1 } } },
+  }));
+  const body = await get(env, "/api/tracks/1/races", LOCK + HOUR, {});
+  const t1 = body.tierResults[0];
+  assert.equal(t1.racesRun, 2);
+  const [first, second] = t1.entries;
+  assert.equal(first.sponsor, "EMAX USA", "EMAX 9 + 10 = 19 beats WREKD 10 + 8 = 18");
+  assert.equal(first.total, 19);
+  assert.equal(first.place, 1);
+  assert.equal(second.sponsor, "WREKD");
+  assert.equal(second.pilot, "Blastaa");
+  assert.deepEqual(second.points.slice(0, 3), [10, 8, null]);
+  assert.equal(second.total, 18);
+  assert.equal(second.place, 2);
+  assert.equal(t1.entries[2].place, null, "teams with no results have no place");
+  assert.equal(body.teams[0].sponsor, "EMAX USA");
+  assert.equal(body.teams.find((t) => t.sponsor === "WREKD").sitting, "xer");
+  assert.equal(body.teams.find((t) => t.sponsor === "WREKD").byTier[1], 18);
+});
