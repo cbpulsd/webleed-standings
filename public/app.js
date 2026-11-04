@@ -44,7 +44,7 @@
     el.style.setProperty("--n", state.tracks.length + 1);
     el.innerHTML =
       `<button class="track-tab overall-tab" role="tab" type="button" data-id="${OVERALL}" data-status="overall"
-        aria-selected="${isOverall()}"><span>Overall</span><span class="state">Season</span></button>` +
+        aria-selected="${isOverall()}"><span>Overall</span></button>` +
       state.tracks
       .map((t) => {
         const off = t.status === "upcoming";
