@@ -354,3 +354,29 @@ test("check link can inspect another Velocidrone track and one pilot's name matc
   assert.equal(r.pilot.inStandings.posted, true);
   assert.equal(r.pilot.inStandings.time, 176.908);
 });
+
+
+test("overall table lists every team and week, with empty points for now", async () => {
+  const env = { STANDINGS: new MemoryKV() };
+  const body = await get(env, "/api/overall", LOCK - HOUR, {});
+  assert.equal(body.weeks.length, 6);
+  assert.deepEqual(body.weeks.map((w) => w.label), ["Week 1", "Week 2", "Week 3", "Week 4", "Week 5", "Week 6"]);
+  assert.equal(body.teams.length, 10);
+  assert.deepEqual(body.teams.map((t) => t.sponsor), TEAMS.map((t) => t.sponsor), "draft order until points exist");
+  assert.ok(body.teams.every((t) => t.total === null && t.position === null));
+  assert.deepEqual(body.teams[0].weeks[1], { smash: null, race: null });
+});
+
+test("overall table ranks by total once points are saved", async () => {
+  const env = { STANDINGS: new MemoryKV() };
+  await env.STANDINGS.put("overall", JSON.stringify({ updatedAt: "2026-11-08T05:00:00Z", points: {
+    WREKD: { 1: { smash: 10, race: 8 } }, "EMAX USA": { 1: { smash: 6, race: "x" } },
+  } }));
+  const body = await get(env, "/api/overall", LOCK + HOUR, {});
+  assert.equal(body.teams[0].sponsor, "WREKD");
+  assert.equal(body.teams[0].total, 18);
+  assert.equal(body.teams[0].position, 1);
+  assert.equal(body.teams[1].sponsor, "EMAX USA");
+  assert.deepEqual(body.teams[1].weeks[1], { smash: 6, race: null }, "bad values are ignored");
+  assert.equal(body.teams[2].position, null);
+});

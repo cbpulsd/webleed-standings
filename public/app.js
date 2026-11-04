@@ -35,11 +35,17 @@
   }
   const statusLabel = { live: "Live", locking: "Locking", locked: "Final", upcoming: "Soon" };
 
-  // ---------- track tabs ----------
+  // ---------- tabs: Overall, then one per track ----------
+  const OVERALL = "overall";
+  const isOverall = () => state.current === OVERALL;
+
   function renderTabs() {
     const el = $("trackTabs");
-    el.style.setProperty("--n", state.tracks.length);
-    el.innerHTML = state.tracks
+    el.style.setProperty("--n", state.tracks.length + 1);
+    el.innerHTML =
+      `<button class="track-tab overall-tab" role="tab" type="button" data-id="${OVERALL}" data-status="overall"
+        aria-selected="${isOverall()}"><span>Overall</span><span class="state">Season</span></button>` +
+      state.tracks
       .map((t) => {
         const off = t.status === "upcoming";
         return `<button class="track-tab" role="tab" type="button" data-id="${t.id}" data-status="${t.status}"
@@ -50,11 +56,11 @@
   }
   $("trackTabs").addEventListener("click", (e) => {
     const b = e.target.closest(".track-tab");
-    if (b && !b.disabled) selectTrack(+b.dataset.id);
+    if (b && !b.disabled) selectTrack(b.dataset.id === OVERALL ? OVERALL : +b.dataset.id);
   });
   $("trackTabs").addEventListener("keydown", (e) => {
     if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
-    const open = state.tracks.filter((t) => t.status !== "upcoming");
+    const open = [{ id: OVERALL }, ...state.tracks.filter((t) => t.status !== "upcoming")];
     const i = open.findIndex((t) => t.id === state.current);
     const next = open[(i + (e.key === "ArrowRight" ? 1 : -1) + open.length) % open.length];
     if (next) { selectTrack(next.id); document.querySelector(`.track-tab[data-id="${next.id}"]`)?.focus(); }
@@ -64,16 +70,33 @@
     if (id === state.current && state.data) return;
     state.current = id;
     state.data = null;
-    try { history.replaceState(null, "", "#track-" + id); } catch (e) {}
+    try { history.replaceState(null, "", id === OVERALL ? "#overall" : "#track-" + id); } catch (e) {}
     renderTabs();
     renderHeader();
+    applyLayout();
     load();
+  }
+
+  // The Overall tab shows the season table instead of the Teams/Pilots views.
+  function applyLayout() {
+    const o = isOverall();
+    document.querySelector(".views").hidden = o;
+    $("viewOverall").hidden = !o;
+    document.querySelector(".wrap").classList.toggle("wide", o);
+    if (o) { $("viewTeams").hidden = true; $("viewPilots").hidden = true; }
+    else showView(state.view);
   }
 
   // ---------- header + status ----------
   function currentTrack() { return state.tracks.find((t) => t.id === state.current) || null; }
 
   function renderHeader() {
+    if (isOverall()) {
+      $("title").textContent = "Overall Standings";
+      document.title = "Season 5 Overall Standings";
+      $("sub").textContent = "Season points for each team: Smash points and Race points for every week. Points are added after each week's races.";
+      return;
+    }
     const t = currentTrack();
     if (!t) return;
     $("title").textContent = `${t.name} Team Standings`;
@@ -92,6 +115,12 @@
     const d = state.data, t = currentTrack();
     if (state.loading && !d) return setStatus("busy", "Loading standings…");
     if (state.error && !d) return setStatus("error", `Couldn't load standings (${state.error}). Trying again in a few minutes.`);
+    if (d && isOverall()) {
+      const any = d.teams.some((x) => x.total != null);
+      return any
+        ? setStatus("live", "Season points so far.", d.updatedAt ? [`Updated <b>${dayFmt.format(new Date(d.updatedAt))}</b>`] : [])
+        : setStatus("idle", "No points yet. Points are added after each week's races.");
+    }
     if (!d || !t) return;
     const s = d.track;
     if (s.status === "locked") {
@@ -109,8 +138,29 @@
     setStatus(state.error ? "error" : "live", `Live · ${d.rowCount} times on the leaderboard.${err}`, meta);
   }
 
+  // ---------- overall ----------
+  const pts = (v) => (v == null ? '<span class="dash">–</span>' : esc(v));
+  function renderOverall() {
+    const d = state.data;
+    if (!d) { $("overallTable").innerHTML = ""; return; }
+    const head1 = d.weeks.map((w) => `<th class="wk" colspan="2" scope="colgroup">${esc(w.label)}</th>`).join("");
+    const head2 = d.weeks.map(() => `<th class="sub wk-start" scope="col">Smash</th><th class="sub" scope="col">Race</th>`).join("");
+    const body = d.teams
+      .map((t) => `<tr>
+        <th class="team-col" scope="row"><div class="ocell">${t.position != null ? `<span class="opos">${t.position}</span>` : ""}<span class="oname"><b>Team ${esc(t.sponsor)}</b><small>Capt ${esc(t.captain)}</small></span></div></th>
+        ${d.weeks.map((w) => `<td class="num wk-start">${pts(t.weeks[w.id]?.smash)}</td><td class="num">${pts(t.weeks[w.id]?.race)}</td>`).join("")}
+        <td class="num tot">${pts(t.total)}</td>
+      </tr>`)
+      .join("");
+    $("overallTable").innerHTML = `<thead>
+        <tr><th class="team-col" rowspan="2" scope="col">Team</th>${head1}<th class="tot" rowspan="2" scope="col">Total</th></tr>
+        <tr>${head2}</tr>
+      </thead><tbody>${body}</tbody>`;
+  }
+
   // ---------- standings ----------
   function renderStandings() {
+    if (isOverall()) return renderOverall();
     const d = state.data;
     if (!d || !d.standings) {
       const t = currentTrack();
@@ -175,14 +225,14 @@
     renderStatus();
     renderStandings();
     try {
-      const res = await api(`/tracks/${id}`);
+      const res = await api(id === OVERALL ? "/overall" : `/tracks/${id}`);
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
       if (state.stopped || id !== state.current) return; // switched tabs meanwhile
       state.data = body;
       state.error = null;
       const t = currentTrack();
-      if (t && t.status !== body.track.status) { Object.assign(t, body.track); renderTabs(); }
+      if (t && body.track && t.status !== body.track.status) { Object.assign(t, body.track); renderTabs(); }
     } catch (e) {
       if (id !== state.current) return;
       state.error = e.message;
@@ -201,6 +251,7 @@
     const d = state.data;
     let wait = null;
     if (state.error) wait = RETRY_MS;
+    else if (isOverall()) wait = 10 * 60_000;
     else if (d && (d.track.status === "live" || d.track.status === "locking")) {
       const target = d.nextUpdateAt ? Date.parse(d.nextUpdateAt) + POLL_AFTER_HOUR_MS : now() + RETRY_MS;
       wait = Math.max(30_000, target - now());
@@ -211,7 +262,7 @@
   document.addEventListener("visibilitychange", () => {
     if (state.stopped || document.visibilityState !== "visible" || state.loading || !state.data) return;
     const d = state.data;
-    if (d.track.status !== "locked" && d.nextUpdateAt && now() > Date.parse(d.nextUpdateAt) + POLL_AFTER_HOUR_MS) load();
+    if (d.track && d.track.status !== "locked" && d.nextUpdateAt && now() > Date.parse(d.nextUpdateAt) + POLL_AFTER_HOUR_MS) load();
   });
   const tickTimer = setInterval(renderStatus, 1000);
 
@@ -228,6 +279,7 @@
       setTimeout(start, RETRY_MS);
       return;
     }
+    if (location.hash === "#overall") { state.error = null; return selectTrack(OVERALL); }
     const fromHash = +((location.hash.match(/^#track-(\d+)$/) || [])[1] || 0);
     const pick =
       state.tracks.find((t) => t.id === fromHash && t.status !== "upcoming") ||
@@ -239,6 +291,7 @@
   }
   window.addEventListener("hashchange", () => {
     if (state.stopped) return;
+    if (location.hash === "#overall") return selectTrack(OVERALL);
     const id = +((location.hash.match(/^#track-(\d+)$/) || [])[1] || 0);
     const t = state.tracks.find((x) => x.id === id);
     if (t && t.status !== "upcoming") selectTrack(id);

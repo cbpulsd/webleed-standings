@@ -44,6 +44,9 @@ h1{font-family:var(--display);font-weight:700;font-size:clamp(28px,6vw,40px);lin
 .track-tab:disabled .state::before{display:none}
 .track-tab:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
+.overall-tab{border-right:1px solid var(--line)!important;border-radius:6px}
+.overall-tab .state{color:var(--accent)}
+
 /* Status strip */
 .status{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;padding:10px 14px;border:1px solid var(--line);border-radius:6px;background:var(--surface);font-size:13px}
 .dot{width:9px;height:9px;border-radius:50%;background:var(--dnf);flex:none}
@@ -94,6 +97,27 @@ table{width:100%;border-collapse:collapse}
 .ind th.num{text-align:right}
 .ind .muted{color:var(--muted)}
 
+/* Overall */
+.overall-wrap{position:relative}
+.overall{min-width:max-content;font-size:14px}
+.overall th,.overall td{padding:8px 10px;border-top:1px solid var(--line);white-space:nowrap}
+.overall thead th{border-top:none;font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.overall thead .wk{text-align:center;color:var(--ink);font-family:var(--display);font-size:14px;font-weight:600;letter-spacing:.03em;text-transform:none;border-left:1px solid var(--line);padding-bottom:2px}
+.overall thead .sub{text-align:right;padding-top:2px;border-bottom:1px solid var(--line)}
+.overall thead tr:first-child .team-col,.overall thead .tot{border-bottom:1px solid var(--line);vertical-align:bottom;text-align:left}
+.overall thead .tot{text-align:right}
+.overall .wk-start{border-left:1px solid var(--line)}
+.overall .num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;min-width:4.5ch}
+.overall .tot{border-left:2px solid var(--line);font-weight:600}
+.overall .dash{color:var(--dnf)}
+.overall .team-col{position:sticky;left:0;z-index:1;background:var(--surface);text-align:left;font-weight:400;box-shadow:1px 0 0 var(--line)}
+.wrap.wide{max-width:1080px}
+.ocell{display:flex;align-items:center;gap:10px;min-width:12.5rem}
+.opos{font-family:var(--display);font-weight:700;font-size:18px;color:var(--muted);min-width:1.4ch;text-align:center;font-variant-numeric:tabular-nums}
+.oname{display:flex;flex-direction:column;line-height:1.2}
+.oname b{font-family:var(--display);font-weight:600;font-size:15px}
+.oname small{color:var(--muted);font-size:12px}
+
 .empty{padding:28px 20px;text-align:center;color:var(--muted);background:var(--surface);border:1px dashed var(--line);border-radius:6px}
 footer{color:var(--muted);font-size:12.5px;display:flex;flex-direction:column;gap:4px}
 
@@ -103,5 +127,7 @@ footer{color:var(--muted);font-size:12.5px;display:flex;flex-direction:column;ga
   .total{grid-column:2;text-align:left;display:flex;gap:10px;align-items:baseline}
   .pilots td{padding:7px 12px}
   .tracks{grid-template-columns:repeat(var(--n,6),minmax(84px,1fr))}
+  .ocell{min-width:9.5rem}
+  .overall th,.overall td{padding:8px 8px}
 }
 @media (prefers-reduced-motion: reduce){.status[data-state="busy"] .dot{animation:none}}

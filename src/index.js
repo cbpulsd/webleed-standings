@@ -4,12 +4,13 @@
 //   GET  /api/tracks                          -> every track with its status, for the tabs
 //   GET  /api/tracks/:id                      -> one track's standings
 //   GET  /api/tracks/:id/history              -> that track's hourly snapshots
+//   GET  /api/overall                         -> season table: Smash and Race points per team per week
 //   GET  /api/health/source/:id               -> read-only check that the game endpoint answers (cached 5 min)
 //   POST /api/admin/tracks/:id/refresh|lock   -> manual controls (needs the ADMIN_TOKEN secret)
 //
 // The page in /public is served as static files and only reads from /api.
 
-import { ALIASES, LATE_LOCK_AFTER_MINUTES, LEAGUE, NO_VISIT_REFRESH_BEFORE_LOCK_MINUTES, SEASON, STALE_MINUTES, TRACKS } from "./config.js";
+import { ALIASES, LATE_LOCK_AFTER_MINUTES, LEAGUE, TEAMS, NO_VISIT_REFRESH_BEFORE_LOCK_MINUTES, SEASON, STALE_MINUTES, TRACKS } from "./config.js";
 import { computeStandings, norm, quadAllowed } from "./standings.js";
 import { fetchGameLeaderboard, gameRows } from "./gameapi.js";
 import { trackIdFromUrl } from "./leaderboard.js";
@@ -60,6 +61,11 @@ export async function route(request, url, env, ctx, now, deps = {}) {
       })
     );
     return json({ league: LEAGUE, season: SEASON, now: new Date(now).toISOString(), tracks }, 200, "public, max-age=60");
+  }
+
+  // /api/overall
+  if (request.method === "GET" && parts[1] === "overall" && parts.length === 2) {
+    return json(await overall(env, now), 200, "public, max-age=60");
   }
 
   // /api/tracks/:id and /api/tracks/:id/history
@@ -161,6 +167,32 @@ export async function route(request, url, env, ctx, now, deps = {}) {
   }
 
   return json({ error: "not found" }, 404, "no-store");
+}
+
+// Season table. Points live in KV under "overall":
+//   { updatedAt, points: { "<sponsor>": { "<trackId>": { smash: 12, race: 8 } } } }
+// Nothing writes it yet; missing points come back as null.
+async function overall(env, now) {
+  const saved = (await env.STANDINGS.get("overall", "json")) || {};
+  const points = saved.points || {};
+  const weeks = TRACKS.map((t) => ({ id: t.id, name: t.name, label: `Week ${t.id}` }));
+  const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  const teams = TEAMS.map((t, order) => {
+    const byWeek = {};
+    let total = null;
+    for (const w of weeks) {
+      const p = points[t.sponsor]?.[w.id] || {};
+      const cell = { smash: num(p.smash), race: num(p.race) };
+      for (const v of [cell.smash, cell.race]) if (v != null) total = (total ?? 0) + v;
+      byWeek[w.id] = cell;
+    }
+    return { sponsor: t.sponsor, captain: t.captain, order, weeks: byWeek, total };
+  });
+  const anyPoints = teams.some((t) => t.total != null);
+  // Most points first once any exist; until then, draft order.
+  teams.sort((a, b) => (anyPoints ? (b.total ?? -Infinity) - (a.total ?? -Infinity) : 0) || a.order - b.order);
+  teams.forEach((t, i) => { t.position = anyPoints && t.total != null ? i + 1 : null; delete t.order; });
+  return { weeks, teams, updatedAt: saved.updatedAt || null };
 }
 
 function summary(track, record, now) {
