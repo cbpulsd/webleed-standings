@@ -44,6 +44,10 @@ export const TRACKS = [
   { id: 6, name: "Track 6" },
 ];
 
+// Race director page password, stored as a SHA-256 hash so it isn't in the code.
+// An ADMIN_PASSWORD secret on the Worker overrides it.
+export const ADMIN_PASSWORD_SHA256 = "fdd233504638ffd87cdb5f1fc13b75ca808710e08b4029da8ed612d3f169a28d";
+
 // Race day: each team races four of its five pilots, one per tier, and sits one.
 // Every tier runs racesPerTier races; points[i] is what finishing position i+1 earns.
 export const RACES = {

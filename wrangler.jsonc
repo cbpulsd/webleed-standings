@@ -22,5 +22,9 @@
   // Cloudflare numbers weekdays 1-7 with Sunday = 1 (not 0), so use day names.
   "triggers": { "crons": ["0 * * * *", "50 4 * * SUN", "59 4 * * SUN"] },
 
+  // Race day: one RaceRoom per track holds lineups and race times and pushes live updates.
+  "durable_objects": { "bindings": [{ "name": "RACES_DO", "class_name": "RaceRoom" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RaceRoom"] }],
+
   "observability": { "enabled": true }
 }

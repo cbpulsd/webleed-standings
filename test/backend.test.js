@@ -7,6 +7,8 @@ import { lockTrack, runSchedule, syncTrack } from "../src/sync.js";
 import { route } from "../src/index.js";
 import { ALIASES, TEAMS, TRACKS } from "../src/config.js";
 import { encrypt } from "../src/gameapi.js";
+import { RaceRoom } from "../src/raceroom.js";
+import { parseRaceTime, positionsFor } from "../src/races.js";
 
 const T1 = TRACKS[0];
 const LOCK = Date.parse(T1.locksAt);
@@ -398,26 +400,141 @@ test("races: 4 tiers x 8 races per team, blank until race day", async () => {
   assert.ok(body.teams.every((t) => t.total === null && t.sitting === null && t.place === null));
 });
 
-test("races: finishing positions become points; tiers and teams rank by points", async () => {
+const PW = "webleedadmin";
+const call = (env, method, path, body, pw = PW, now = LOCK + HOUR, deps = {}) =>
+  route(new Request("https://x.dev" + path, { method, headers: { "content-type": "application/json", ...(pw ? { "x-admin-password": pw } : {}) }, body: body ? JSON.stringify(body) : undefined }),
+    new URL("https://x.dev" + path), env, ctx(), now, deps);
+
+// The real RaceRoom class behind a stand-in for Cloudflare's Durable Object plumbing.
+function fakeRaceRooms() {
+  const rooms = new Map();
+  const ns = {
+    rooms,
+    idFromName: (name) => name,
+    get(id) {
+      if (!rooms.has(id)) {
+        const data = new Map();
+        const sockets = [];
+        const state = {
+          storage: { get: async (k) => (data.has(k) ? structuredClone(data.get(k)) : undefined), put: async (k, v) => void data.set(k, structuredClone(v)) },
+          acceptWebSocket: (ws) => sockets.push(ws),
+          getWebSockets: () => sockets,
+        };
+        const room = new RaceRoom(state, {});
+        rooms.set(id, { room, sockets, fetch: (input, init) => room.fetch(input instanceof Request ? input : new Request(input, init)) });
+      }
+      return rooms.get(id);
+    },
+  };
+  return ns;
+}
+const STORES = [
+  ["Durable Object", () => ({ STANDINGS: new MemoryKV(), RACES_DO: fakeRaceRooms() })],
+  ["KV fallback", () => ({ STANDINGS: new MemoryKV() })],
+];
+
+test("race times rank into positions: fastest 1st, ties share, DNF 0, blanks ignored", () => {
+  assert.deepEqual(positionsFor([45.1, 44.9, "dnf", null, 45.1, 50]), [2, 1, 0, null, 2, 4]);
+  assert.equal(parseRaceTime("45.123"), 45.123);
+  assert.equal(parseRaceTime("1:05.4"), 65.4);
+  assert.equal(parseRaceTime(" DNF "), "dnf");
+  assert.equal(parseRaceTime(""), null);
+  assert.equal(parseRaceTime("fast"), undefined);
+  assert.equal(parseRaceTime("-3"), undefined);
+});
+
+test("race director: wrong or missing password can't read or save", async () => {
   const env = { STANDINGS: new MemoryKV() };
-  await env.STANDINGS.put("races:1", JSON.stringify({
-    lineup: { WREKD: { tiers: { 1: "Blastaa" }, sitting: "xer" } },
-    results: { 1: { 1: { WREKD: 1, "EMAX USA": 2 }, 2: { WREKD: 3, "EMAX USA": 1 } } },
-  }));
-  const body = await get(env, "/api/tracks/1/races", LOCK + HOUR, {});
-  const t1 = body.tierResults[0];
-  assert.equal(t1.racesRun, 2);
-  const [first, second] = t1.entries;
-  assert.equal(first.sponsor, "EMAX USA", "EMAX 9 + 10 = 19 beats WREKD 10 + 8 = 18");
-  assert.equal(first.total, 19);
-  assert.equal(first.place, 1);
-  assert.equal(second.sponsor, "WREKD");
-  assert.equal(second.pilot, "Blastaa");
-  assert.deepEqual(second.points.slice(0, 3), [10, 8, null]);
-  assert.equal(second.total, 18);
-  assert.equal(second.place, 2);
-  assert.equal(t1.entries[2].place, null, "teams with no results have no place");
-  assert.equal(body.teams[0].sponsor, "EMAX USA");
-  assert.equal(body.teams.find((t) => t.sponsor === "WREKD").sitting, "xer");
-  assert.equal(body.teams.find((t) => t.sponsor === "WREKD").byTier[1], 18);
+  assert.equal((await call(env, "POST", "/api/admin/login", null, "nope")).status, 403);
+  assert.equal((await call(env, "POST", "/api/admin/login", null, null)).status, 403);
+  assert.equal((await call(env, "POST", "/api/admin/login")).status, 200);
+  assert.equal((await call(env, "PATCH", "/api/admin/tracks/1/races/lineup", { sitting: { WREKD: "xer" } }, "WebleedAdmin")).status, 403);
+  assert.equal((await call(env, "GET", "/api/admin/tracks/1/races", null, null)).status, 403);
+  assert.equal(env.STANDINGS.writes, 0);
+  const env2 = { STANDINGS: new MemoryKV(), ADMIN_PASSWORD: "other" };
+  assert.equal((await call(env2, "POST", "/api/admin/login")).status, 403, "a Worker secret overrides the built-in password");
+  assert.equal((await call(env2, "POST", "/api/admin/login", null, "other")).status, 200);
+});
+
+for (const [label, makeEnv] of STORES) {
+  test(`race director (${label}): picking who sits slots the other four into tiers by Smash order`, async () => {
+    const env = makeEnv();
+    const site = fakeSite([[1, "70.000", "Britchot"], [2, "72.000", "Blastaa"], [3, "75.000", "SpookyV9"], [4, "80.000", "Mgescapades"]]);
+    await runSchedule(env, LOCK - HOUR, { fetchImpl: site.fetch, retryDelayMs: 0 });
+    await runSchedule(env, LOCK + 1000, { fetchImpl: site.fetch, retryDelayMs: 0 }); // locked, like on race day
+
+    const res = await call(env, "PATCH", "/api/admin/tracks/1/races/lineup", { sitting: { WREKD: "Blastaa" } });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    const wrekd = (tier) => body.tierResults[tier - 1].entries.find((e) => e.sponsor === "WREKD").pilot;
+    assert.deepEqual([1, 2, 3, 4].map(wrekd), ["Britchot", "SpookyV9", "Mgescapades", "xer"], "xer has no time, so he's last");
+    assert.equal(body.teams.find((t) => t.sponsor === "WREKD").sitting, "Blastaa");
+    assert.equal(body.tierResults[0].entries.find((e) => e.sponsor === "EMAX USA").pilot, null, "no sit-out picked yet");
+
+    const pub = await get(env, "/api/tracks/1/races", LOCK + HOUR, {});
+    assert.equal(pub.tierResults[3].entries.find((e) => e.sponsor === "WREKD").pilot, "xer");
+
+    assert.equal((await call(env, "PATCH", "/api/admin/tracks/1/races/lineup", { sitting: { WREKD: "TMAD" } })).status, 400);
+    const cleared = await (await call(env, "PATCH", "/api/admin/tracks/1/races/lineup", { sitting: { WREKD: null } })).json();
+    assert.equal(cleared.tierResults[0].entries.find((e) => e.sponsor === "WREKD").pilot, null);
+  });
+
+  test(`race director (${label}): times become positions and points; edits merge; bad input saves nothing`, async () => {
+    const env = makeEnv();
+    await call(env, "PATCH", "/api/admin/tracks/1/races/tiers/1", { results: { 1: { WREKD: "44.100" } } });
+    await call(env, "PATCH", "/api/admin/tracks/1/races/tiers/1", { results: { 1: { "EMAX USA": "44.900" } } }); // a second director, same race
+    await call(env, "PATCH", "/api/admin/tracks/1/races/tiers/1", { results: { 2: { WREKD: "46.000", "EMAX USA": "45.000" } } });
+    await call(env, "PATCH", "/api/admin/tracks/1/races/tiers/2", { results: { 1: { WREKD: "DNF" } } });
+    const body = await get(env, "/api/tracks/1/races", LOCK + HOUR, {});
+    const t1 = body.tierResults[0];
+    assert.equal(t1.racesRun, 2);
+    const emax = t1.entries.find((e) => e.sponsor === "EMAX USA"), wrekd = t1.entries.find((e) => e.sponsor === "WREKD");
+    assert.deepEqual(wrekd.times.slice(0, 2), [44.1, 46]);
+    assert.deepEqual(wrekd.positions.slice(0, 2), [1, 2]);
+    assert.deepEqual(wrekd.points.slice(0, 3), [10, 9, null]);
+    assert.equal(emax.total, 19);
+    assert.equal(wrekd.total, 19);
+    const dnf = body.tierResults[1].entries.find((e) => e.sponsor === "WREKD");
+    assert.deepEqual([dnf.times[0], dnf.positions[0], dnf.points[0]], ["dnf", 0, 0]);
+    assert.equal(body.teams.find((t) => t.sponsor === "WREKD").byTier[1], 19);
+
+    await call(env, "PATCH", "/api/admin/tracks/1/races/tiers/1", { results: { 2: { WREKD: "" } } });
+    const after = await get(env, "/api/tracks/1/races", LOCK + HOUR, {});
+    const e2 = after.tierResults[0].entries;
+    assert.equal(e2.find((e) => e.sponsor === "WREKD").total, 10);
+    assert.equal(e2.find((e) => e.sponsor === "EMAX USA").points[1], 10, "EMAX is now alone in race 2");
+
+    const before = JSON.stringify((await get(env, "/api/tracks/1/races", LOCK + HOUR, {})).tierResults);
+    for (const bad of [{ 9: { WREKD: "40.1" } }, { 1: { Nobody: "40.1" } }, { 1: { WREKD: "fast" } }, { 1: { WREKD: -2 } }]) {
+      assert.equal((await call(env, "PATCH", "/api/admin/tracks/1/races/tiers/1", { results: bad })).status, 400, JSON.stringify(bad));
+    }
+    assert.equal((await call(env, "PATCH", "/api/admin/tracks/1/races/tiers/5", { results: {} })).status, 404);
+    assert.equal(JSON.stringify((await get(env, "/api/tracks/1/races", LOCK + HOUR, {})).tierResults), before);
+  });
+
+  test(`race director (${label}): shows who each team sat out in other weeks`, async () => {
+    const env = makeEnv();
+    await call(env, "PATCH", "/api/admin/tracks/2/races/lineup", { sitting: { WREKD: "xer" } });
+    const body = await (await call(env, "GET", "/api/admin/tracks/1/races")).json();
+    assert.deepEqual(body.satBefore, { WREKD: { xer: [2] } });
+  });
+}
+
+test("every edit is pushed to open pages right away", async () => {
+  const env = { STANDINGS: new MemoryKV(), RACES_DO: fakeRaceRooms() };
+  const got = [];
+  const viewer = { send: (m) => got.push(JSON.parse(m)) };
+  env.RACES_DO.get("track-1").sockets.push(viewer);
+  await call(env, "PATCH", "/api/admin/tracks/1/races/tiers/3", { results: { 4: { WREKD: "50.5" } } });
+  await call(env, "PATCH", "/api/admin/tracks/1/races/lineup", { sitting: { WREKD: "xer" } });
+  assert.deepEqual(got.map((m) => [m.type, m.kind, m.tier, m.version]), [["update", "tier", 3, 1], ["update", "lineup", null, 2]]);
+  const pub = await get(env, "/api/tracks/1/races", LOCK + HOUR, {});
+  assert.equal(pub.live, true);
+  assert.equal(pub.version, 2);
+  // a rejected edit isn't announced
+  await call(env, "PATCH", "/api/admin/tracks/1/races/tiers/3", { results: { 4: { WREKD: "nope" } } });
+  assert.equal(got.length, 2);
+  // without the Durable Object, the live link says so instead of hanging
+  const kv = await route(new Request("https://x.dev/api/tracks/1/races/live"), new URL("https://x.dev/api/tracks/1/races/live"), { STANDINGS: new MemoryKV() }, ctx(), LOCK, {});
+  assert.equal(kv.status, 501);
 });

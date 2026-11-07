@@ -1,6 +1,6 @@
 // Standings page. Reads only from /api; the backend does all fetching and locking.
 (() => {
-  const api = (path) => (window.STANDINGS_FETCH || fetch)("/api" + path, { cache: "no-store" });
+  const api = (path, init = {}) => (window.STANDINGS_FETCH || fetch)("/api" + path, { cache: "no-store", ...init });
   const now = () => (window.STANDINGS_NOW ? window.STANDINGS_NOW() : Date.now());
   const NO_TIME = 999.99;
   const POLL_AFTER_HOUR_MS = 90_000; // check for the new hourly data 90 s after the hour
@@ -66,8 +66,8 @@
     if (next) { selectTrack(next.id); document.querySelector(`.track-tab[data-id="${next.id}"]`)?.focus(); }
   });
 
-  function selectTrack(id) {
-    if (id === state.current && state.data) return;
+  function selectTrack(id, force = false) {
+    if (id === state.current && state.data && !force) return;
     state.current = id;
     state.data = null;
     state.races = null;
@@ -84,7 +84,7 @@
     document.querySelector(".views").hidden = o;
     $("viewOverall").hidden = !o;
     document.querySelector(".wrap").classList.toggle("wide", o);
-    if (o) { $("viewTeams").hidden = true; $("viewPilots").hidden = true; $("viewRaces").hidden = true; }
+    if (o) { $("viewTeams").hidden = true; $("viewPilots").hidden = true; $("viewRaces").hidden = true; liveStop(); }
     else showView(state.view);
   }
 
@@ -214,7 +214,8 @@
     $("viewPilotsBtn").setAttribute("aria-selected", v === "pilots");
     $("viewRacesBtn").setAttribute("aria-selected", v === "races");
     $("viewRaces").hidden = v !== "races";
-    if (v === "races" && !isOverall()) loadRaces();
+    if (v === "races" && !isOverall()) { loadRaces(); liveStart(state.current, loadRaces); }
+    else liveStop();
     $("viewTeams").hidden = v !== "teams";
     $("viewPilots").hidden = v !== "pilots";
   }
@@ -243,20 +244,23 @@
     renderRaces();
   }
 
-  function renderRaces() {
-    const el = $("viewRaces");
-    const r = state.races;
-    if (!r || (!r.data && !r.error)) { el.innerHTML = `<div class="empty">Loading race day…</div>`; return; }
-    if (!r.data) { el.innerHTML = `<div class="empty">Couldn't load race results (${esc(r.error)}).</div>`; return; }
-    const d = r.data;
-    const tiers = d.tierResults.map((t) => t.tier);
-    const day = d.raceDay ? raceDayFmt.format(new Date(d.raceDay + "T12:00:00")) : "Sunday";
-    const anyResults = d.tierResults.some((t) => t.racesRun > 0);
-    const pointsLine = d.points.map((p, i) => `${ordinal(i + 1)} ${p}`).join(" · ");
-    const place = (p) => (p != null ? `<span class="opos">${p}</span>` : "");
-    const pilotLabel = (p) => (p ? esc(p) : '<span class="tbd">Pilot TBD</span>');
+  const fmtTime = (t) => (t === "dnf" ? "DNF" : typeof t === "number" ? t.toFixed(3) : "");
+  const resultTitle = (time, pos) => (time == null ? "" : time === "dnf" ? "DNF" : `${fmtTime(time)} s · ${ordinal(pos)}`);
+  const place = (p) => (p != null ? `<span class="opos">${p}</span>` : "");
+  const pilotLabel = (p) => (p ? esc(p) : '<span class="tbd">Pilot TBD</span>');
+  const raceDayText = (d) => (d.raceDay ? raceDayFmt.format(new Date(d.raceDay + "T12:00:00")) : "Sunday");
+  const leaderOf = (list) => (list[0] && list[0].place === 1 ? `Leader: Team ${esc(list[0].sponsor)} (${list[0].total})` : "");
+  const metaJoin = (...parts) => parts.filter(Boolean).join(" · ");
+  const tierMeta = (t, d) => metaJoin(t.racesRun ? `${t.racesRun} of ${d.racesPerTier} races run` : `${d.racesPerTier} races`, leaderOf(t.entries));
+  const fold = (key, title, meta, inner) => `
+      <details class="fold" data-fold="${key}"${isOpen(key) ? " open" : ""}>
+        <summary class="sec-head"><h2>${title}</h2><span data-meta="${key}">${meta}</span></summary>
+        ${inner}
+      </details>`;
 
-    const summary = `
+  function raceSummaryTable(d) {
+    const tiers = d.tierResults.map((t) => t.tier);
+    return `
       <div class="table-wrap"><table class="overall grid">
         <thead><tr><th class="team-col" scope="col">Team</th>${tiers.map((t) => `<th class="num wk-start" scope="col">Tier ${t}</th>`).join("")}<th class="num tot" scope="col">Total</th><th class="wk-start sit" scope="col">Sitting out</th></tr></thead>
         <tbody>${d.teams.map((t) => `<tr>
@@ -266,37 +270,314 @@
           <td class="wk-start sit">${t.sitting ? esc(t.sitting) : '<span class="tbd">TBD</span>'}</td>
         </tr>`).join("")}</tbody>
       </table></div>`;
+  }
 
-    const fold = (key, title, meta, inner) => `
-      <details class="fold" data-fold="${key}"${isOpen(key) ? " open" : ""}>
-        <summary class="sec-head"><h2>${title}</h2><span>${meta}</span></summary>
-        ${inner}
-      </details>`;
-    const leaderOf = (list) => (list[0] && list[0].place === 1 ? `Leader: Team ${esc(list[0].sponsor)} (${list[0].total})` : "");
-    const metaJoin = (...parts) => parts.filter(Boolean).join(" · ");
+  function renderRaces() {
+    const el = $("viewRaces");
+    const r = state.races;
+    if (!r || (!r.data && !r.error)) { el.innerHTML = `<div class="empty">Loading race day…</div>`; return; }
+    if (!r.data) { el.innerHTML = `<div class="empty">Couldn't load race results (${esc(r.error)}).</div>`; return; }
+    const d = r.data;
+    const anyResults = d.tierResults.some((t) => t.racesRun > 0);
+    const pointsLine = d.points.map((p, i) => `${ordinal(i + 1)} ${p}`).join(" · ");
+    const summary = raceSummaryTable(d);
 
-    const tierTables = d.tierResults.map((t) => fold(`tier-${t.tier}`, `Tier ${t.tier}`,
-      metaJoin(t.racesRun ? `${t.racesRun} of ${d.racesPerTier} races run` : `${d.racesPerTier} races`, leaderOf(t.entries)), `
+    const tierTables = d.tierResults.map((t) => fold(`tier-${t.tier}`, `Tier ${t.tier}`, tierMeta(t, d), `
         <div class="table-wrap"><table class="overall grid">
           <thead><tr><th class="team-col" scope="col">Team · Pilot</th>${Array.from({ length: d.racesPerTier }, (_, i) => `<th class="num${i === 0 ? " wk-start" : ""}" scope="col">R${i + 1}</th>`).join("")}<th class="num tot" scope="col">Total</th></tr></thead>
           <tbody>${t.entries.map((e) => `<tr>
             <th class="team-col" scope="row"><div class="ocell">${place(e.place)}<span class="oname"><b>Team ${esc(e.sponsor)}</b><small>${pilotLabel(e.pilot)}</small></span></div></th>
-            ${e.points.map((p, i) => `<td class="num${i === 0 ? " wk-start" : ""}"${e.positions[i] ? ` title="Finished ${ordinal(e.positions[i])}"` : ""}>${pts(p)}</td>`).join("")}
+            ${e.points.map((p, i) => `<td class="num${i === 0 ? " wk-start" : ""}"${e.times?.[i] != null ? ` title="${resultTitle(e.times[i], e.positions[i])}"` : ""}>${pts(p)}</td>`).join("")}
             <td class="num tot">${pts(e.total)}</td>
           </tr>`).join("")}</tbody>
         </table></div>`)).join("");
 
     el.innerHTML = `
-      <p class="races-note"><b>Race day: ${esc(day)}.</b> Each team races four of its five pilots, one per tier, and sits one. Every tier runs ${d.racesPerTier} races. Points by finishing position: ${pointsLine}.${anyResults ? "" : " Lineups and results appear here on race day."}</p>
+      <p class="races-note"><b>Race day: ${esc(raceDayText(d))}.</b> Each team races four of its five pilots, one per tier, and sits one. Every tier runs ${d.racesPerTier} races. Points by finishing position: ${pointsLine}.${anyResults ? "" : " Lineups and results appear here on race day."}${d.live ? ' <span class="live-pill">Updates live</span>' : ""}</p>
       ${fold("summary", "Team race points", leaderOf(d.teams), summary)}
-      ${tierTables}`;
+      ${tierTables}
+      <div class="races-foot"><a class="btn" href="#admin-${d.track}">Race director: enter results</a></div>`;
   }
+
+  // ---------- live updates (WebSocket to the track's RaceRoom) ----------
+  const live = { id: null, ws: null, onUpdate: null, retry: 1000, timer: null, ping: null, poll: null };
+  function liveStart(id, onUpdate) {
+    if (live.id === id && live.onUpdate === onUpdate && (live.ws || live.poll)) return;
+    liveStop();
+    live.id = id;
+    live.onUpdate = onUpdate;
+    // No live link in the test preview or very old browsers: check every 30 s instead.
+    if (window.STANDINGS_FETCH || !("WebSocket" in window)) { live.poll = setInterval(() => live.onUpdate(), 30_000); return; }
+    connect();
+    function connect() {
+      if (live.id !== id) return;
+      let ws;
+      try { ws = new WebSocket(location.origin.replace(/^http/, "ws") + `/api/tracks/${id}/races/live`); } catch (e) { return retryLater(); }
+      live.ws = ws;
+      ws.onopen = () => { live.retry = 1000; clearInterval(live.poll); live.poll = null; live.ping = setInterval(() => { try { ws.send("ping"); } catch (e) {} }, 30_000); };
+      ws.onmessage = (ev) => { try { if (JSON.parse(ev.data).type === "update") live.onUpdate(); } catch (e) {} };
+      ws.onclose = () => { clearInterval(live.ping); if (live.ws === ws) { live.ws = null; retryLater(); } };
+      ws.onerror = () => {};
+    }
+    function retryLater() {
+      if (live.id !== id) return;
+      if (!live.poll) live.poll = setInterval(() => live.onUpdate(), 30_000); // keep data fresh while reconnecting
+      live.timer = setTimeout(connect, live.retry);
+      live.retry = Math.min(live.retry * 2, 30_000);
+    }
+  }
+  function liveStop() {
+    live.id = null;
+    clearTimeout(live.timer); clearInterval(live.ping); clearInterval(live.poll);
+    live.poll = null;
+    if (live.ws) { const ws = live.ws; live.ws = null; try { ws.close(); } catch (e) {} }
+  }
+
+  // ---------- race director page (#admin-<track>) ----------
+  const PW_KEY = "webleedRaceDirector";
+  const adm = { id: null, pw: null, pwMem: null, data: null, satBefore: {}, saving: 0, error: null, savedAt: null };
+  const getPw = () => { try { return sessionStorage.getItem(PW_KEY) || adm.pwMem; } catch (e) { return adm.pwMem; } };
+  const setPw = (v) => { adm.pwMem = v; try { v ? sessionStorage.setItem(PW_KEY, v) : sessionStorage.removeItem(PW_KEY); } catch (e) {} };
+  const adminApi = (path, init = {}) => api("/admin" + path, { ...init, headers: { "content-type": "application/json", "x-admin-password": adm.pw || "" } });
+  const adminIdFromHash = () => +((location.hash.match(/^#admin-(\d+)$/) || [])[1] || 0);
+  const isAdmin = () => state.mode === "admin";
+  const timeFmt2 = new Intl.DateTimeFormat([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
+
+  // Same rules as the server: seconds (45.123 or 1:05.432), DNF, or blank to clear.
+  function parseTime(v) {
+    const s2 = String(v ?? "").trim().toLowerCase();
+    if (!s2) return null;
+    if (s2 === "dnf") return "dnf";
+    const m = s2.match(/^(?:(\d{1,2}):)?(\d{1,4}(?:\.\d{1,3})?)$/);
+    if (!m) return undefined;
+    const secs = (m[1] ? +m[1] * 60 : 0) + parseFloat(m[2]);
+    return secs > 0 && secs < 3600 ? Math.round(secs * 1000) / 1000 : undefined;
+  }
+
+  function enterAdmin(id) {
+    state.mode = "admin";
+    adm.id = id; adm.data = null; adm.error = null;
+    liveStop();
+    clearTimeout(state.pollTimer);
+    document.body.classList.add("admin-mode");
+    document.querySelector(".wrap").classList.add("wide");
+    $("viewAdmin").hidden = false;
+    const t = state.tracks.find((x) => x.id === id);
+    $("title").textContent = `Race Director · ${t ? t.name : "Track " + id}`;
+    document.title = `Race Director · ${t ? t.name : "Track " + id}`;
+    $("sub").textContent = "Pick who sits out for each team, then type each pilot's race time. Every change saves when you leave the box and shows on the Races tab right away.";
+    adm.pw = getPw();
+    if (adm.pw) loadAdmin(); else renderGate();
+  }
+
+  function exitAdmin() {
+    state.mode = null;
+    liveStop();
+    document.body.classList.remove("admin-mode");
+    $("viewAdmin").hidden = true;
+    $("viewAdmin").innerHTML = "";
+  }
+
+  function renderGate(message) {
+    $("viewAdmin").innerHTML = `
+      <form class="gate" id="gateForm">
+        <label for="adminPw">Race director password</label>
+        <div class="gate-row"><input id="adminPw" type="password" autocomplete="current-password" required><button type="submit">Open</button></div>
+        ${message ? `<p class="gate-msg" role="alert">${esc(message)}</p>` : ""}
+        <a href="#track-${adm.id}">Back to the standings</a>
+      </form>`;
+    setTimeout(() => $("adminPw")?.focus(), 0);
+  }
+
+  async function loadAdmin() {
+    const id = adm.id;
+    if (!adm.data) $("viewAdmin").innerHTML = `<div class="empty">Opening race day…</div>`;
+    try {
+      const res = await adminApi(`/tracks/${id}/races`);
+      if (res.status === 403) { setPw(null); adm.pw = null; return renderGate("Please enter the password again."); }
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+      if (!isAdmin() || adm.id !== id) return;
+      const first = !adm.data;
+      adm.data = body;
+      adm.satBefore = body.satBefore || {};
+      if (first) { renderAdmin(); liveStart(id, loadAdmin); } else syncAdmin();
+    } catch (e) {
+      if (!adm.data) $("viewAdmin").innerHTML = `<div class="empty">Couldn't open race day (${esc(e.message)}). <a href="#admin-${id}" onclick="location.reload()">Try again</a></div>`;
+    }
+  }
+
+  const draftSorted = (list) => [...list].sort((a, b) => a.draft - b.draft);
+  const lineupText = (t) => (t.lineup ? Object.entries(t.lineup).map(([tier, p]) => `<span>T${tier} ${esc(p)}</span>`).join("") : '<span class="tbd">Pick who sits to fill the tiers</span>');
+
+  function renderAdmin() {
+    const d = adm.data;
+    const teams = draftSorted(d.teams);
+    const sat = adm.satBefore;
+    const sitCards = teams.map((t, i) => {
+      const options = t.smashOrder.map((p, n) => {
+        const weeks = sat[t.sponsor]?.[p];
+        return `<option value="${esc(p)}"${t.sitting === p ? " selected" : ""}>${n + 1}. ${esc(p)}${weeks ? ` (sat Wk ${weeks.join(", ")})` : ""}</option>`;
+      }).join("");
+      return `<div class="sit-card">
+        <label for="sit-${i}"><b>Team ${esc(t.sponsor)}</b></label>
+        <select id="sit-${i}" data-kind="sit" data-sponsor="${esc(t.sponsor)}"><option value="">Pick who sits…</option>${options}</select>
+        <div class="lineup" data-lineup="${esc(t.sponsor)}">${lineupText(t)}</div>
+      </div>`;
+    }).join("");
+    const picked = d.teams.filter((t) => t.sitting).length;
+
+    const tierTables = d.tierResults.map((t) => {
+      const rows = draftSorted(t.entries).map((e) => `<tr>
+        <th class="team-col" scope="row"><div class="ocell"><span class="oname"><b>Team ${esc(e.sponsor)}</b><small data-pilot="${t.tier}|${esc(e.sponsor)}">${pilotLabel(e.pilot)}</small></span></div></th>
+        ${e.times.map((tm, ri) => `<td class="tcell${ri === 0 ? " wk-start" : ""}">
+          <input class="tin" data-kind="time" data-tier="${t.tier}" data-race="${ri + 1}" data-sponsor="${esc(e.sponsor)}" value="${fmtTime(tm)}" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="–" aria-label="Team ${esc(e.sponsor)}, tier ${t.tier}, race ${ri + 1} time">
+          <small class="tres" data-res="${t.tier}|${ri + 1}|${esc(e.sponsor)}">${resLabel(e, ri)}</small>
+        </td>`).join("")}
+        <td class="num tot" data-tot="${t.tier}|${esc(e.sponsor)}">${pts(e.total)}</td>
+      </tr>`).join("");
+      return fold(`adm-tier-${t.tier}`, `Tier ${t.tier}`, tierMeta(t, d), `
+        <div class="table-wrap"><table class="overall grid admin-grid">
+          <thead><tr><th class="team-col" scope="col">Team · Pilot</th>${Array.from({ length: d.racesPerTier }, (_, i) => `<th class="num${i === 0 ? " wk-start" : ""}" scope="col">R${i + 1}</th>`).join("")}<th class="num tot" scope="col">Points</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div>`);
+    }).join("");
+
+    $("viewAdmin").innerHTML = `
+      <div class="admin-bar">
+        <span class="save-state" id="saveState" data-state="ok">All changes saved</span>
+        <span class="admin-actions"><a href="#track-${adm.id}">Back to Races</a><button type="button" id="signOut">Sign out</button></span>
+      </div>
+      <p class="races-note">Times are in seconds (45.123 or 1:05.432). Type <b>DNF</b> for a pilot who didn't finish, or clear the box to remove a time. The fastest time in each race finishes 1st.</p>
+      ${fold("adm-sit", "Who sits out", `${picked} of ${d.teams.length} picked`, `<p class="sit-hint">Pilots are listed in their team's Smash order for this track. The four who race fill Tiers 1–4 in that order.</p><div class="sit-grid">${sitCards}</div>`)}
+      ${fold("adm-summary", "Team race points", leaderOf(d.teams), `<div id="admSummary">${raceSummaryTable(d)}</div>`)}
+      ${tierTables}`;
+    renderSaveState();
+  }
+
+  function resLabel(e, ri) {
+    const tm = e.times[ri];
+    if (tm == null) return "";
+    if (tm === "dnf") return "DNF · 0";
+    return `${ordinal(e.positions[ri])} · ${e.points[ri]}`;
+  }
+
+  // Refresh everything derived from saved data, without touching a box someone is typing in.
+  function syncAdmin() {
+    const d = adm.data;
+    const root = $("viewAdmin");
+    if (!root.querySelector(".admin-bar")) return renderAdmin();
+    const focused = document.activeElement;
+    for (const t of d.teams) {
+      const sel = root.querySelector(`select[data-kind="sit"][data-sponsor="${CSS.escape(t.sponsor)}"]`);
+      if (sel && sel !== focused && !sel.dataset.dirty) sel.value = t.sitting || "";
+      const ln = root.querySelector(`[data-lineup="${CSS.escape(t.sponsor)}"]`);
+      if (ln) ln.innerHTML = lineupText(t);
+    }
+    for (const t of d.tierResults) {
+      for (const e of t.entries) {
+        const key = `${t.tier}|${e.sponsor}`;
+        const pl = root.querySelector(`[data-pilot="${CSS.escape(key)}"]`);
+        if (pl) pl.innerHTML = pilotLabel(e.pilot);
+        const tot = root.querySelector(`[data-tot="${CSS.escape(key)}"]`);
+        if (tot) tot.innerHTML = pts(e.total);
+        e.times.forEach((tm, ri) => {
+          const inp = root.querySelector(`input[data-tier="${t.tier}"][data-race="${ri + 1}"][data-sponsor="${CSS.escape(e.sponsor)}"]`);
+          if (inp && inp !== focused && !inp.dataset.dirty) { inp.value = fmtTime(tm); inp.classList.remove("bad"); }
+          const res = root.querySelector(`[data-res="${CSS.escape(`${t.tier}|${ri + 1}|${e.sponsor}`)}"]`);
+          if (res) res.textContent = resLabel(e, ri);
+        });
+      }
+      const meta = root.querySelector(`[data-meta="adm-tier-${t.tier}"]`);
+      if (meta) meta.innerHTML = tierMeta(t, d);
+    }
+    const sm = $("admSummary");
+    if (sm) sm.innerHTML = raceSummaryTable(d);
+    const m1 = root.querySelector('[data-meta="adm-summary"]');
+    if (m1) m1.innerHTML = leaderOf(d.teams);
+    const m2 = root.querySelector('[data-meta="adm-sit"]');
+    if (m2) m2.textContent = `${d.teams.filter((t) => t.sitting).length} of ${d.teams.length} picked`;
+  }
+
+  function renderSaveState() {
+    const el = $("saveState");
+    if (!el) return;
+    if (adm.saving) { el.dataset.state = "busy"; el.textContent = "Saving…"; }
+    else if (adm.error) { el.dataset.state = "error"; el.textContent = adm.error; }
+    else { el.dataset.state = "ok"; el.textContent = adm.savedAt ? `All changes saved · ${timeFmt2.format(adm.savedAt)}` : "All changes saved"; }
+  }
+
+  async function saveEdit(path, body, el) {
+    adm.saving++;
+    adm.error = null;
+    renderSaveState();
+    el.dataset.dirty = "1";
+    try {
+      const res = await adminApi(path, { method: "PATCH", body: JSON.stringify(body) });
+      const out = await res.json().catch(() => ({}));
+      if (res.status === 403) { setPw(null); adm.pw = null; adm.saving--; liveStop(); return renderGate("Please enter the password again. Your last change wasn't saved."); }
+      if (!res.ok) throw new Error(out.error || `HTTP ${res.status}`);
+      delete el.dataset.dirty;
+      el.classList.remove("bad");
+      el.removeAttribute("title");
+      if (isAdmin()) { adm.data = { ...out, satBefore: adm.satBefore }; adm.savedAt = new Date(); syncAdmin(); }
+    } catch (e) {
+      el.classList.add("bad");
+      el.title = e.message;
+      adm.error = `Couldn't save: ${e.message}. Change the box again to retry.`;
+    } finally {
+      adm.saving = Math.max(0, adm.saving - 1);
+      renderSaveState();
+    }
+  }
+
+  $("viewAdmin").addEventListener("change", (e) => {
+    const el = e.target;
+    if (!isAdmin() || !el.dataset) return;
+    if (el.dataset.kind === "sit") {
+      saveEdit(`/tracks/${adm.id}/races/lineup`, { sitting: { [el.dataset.sponsor]: el.value || null } }, el);
+    } else if (el.dataset.kind === "time") {
+      const t = parseTime(el.value);
+      if (t === undefined) {
+        el.classList.add("bad");
+        el.dataset.dirty = "1";
+        el.title = "Use seconds like 45.123 or 1:05.432, or DNF";
+        adm.error = `"${el.value}" isn't a race time. Use seconds like 45.123, or DNF.`;
+        return renderSaveState();
+      }
+      el.value = fmtTime(t);
+      saveEdit(`/tracks/${adm.id}/races/tiers/${el.dataset.tier}`, { results: { [el.dataset.race]: { [el.dataset.sponsor]: t === null ? null : t === "dnf" ? "DNF" : String(t) } } }, el);
+    }
+  });
+  $("viewAdmin").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && e.target.dataset?.kind === "time") e.target.blur();
+  });
+  $("viewAdmin").addEventListener("submit", async (e) => {
+    if (e.target.id !== "gateForm") return;
+    e.preventDefault();
+    const pw = $("adminPw").value;
+    adm.pw = pw;
+    try {
+      const res = await adminApi("/login", { method: "POST" });
+      if (!res.ok) { adm.pw = null; return renderGate(res.status === 403 ? "That password didn't work." : `Couldn't check the password (HTTP ${res.status}).`); }
+      setPw(pw);
+      loadAdmin();
+    } catch (err) {
+      adm.pw = null;
+      renderGate(`Couldn't check the password (${err.message}).`);
+    }
+  });
+  $("viewAdmin").addEventListener("click", (e) => {
+    if (e.target.id !== "signOut") return;
+    setPw(null); adm.pw = null; liveStop(); renderGate("Signed out.");
+  });
+  window.addEventListener("beforeunload", (e) => { if (isAdmin() && adm.saving) { e.preventDefault(); e.returnValue = ""; } });
 
   // Which race sections are open. Team race points starts open, tiers closed;
   // a viewer's choice is kept when the data refreshes.
-  const foldState = { summary: true };
+  const foldState = { summary: true, "adm-sit": true, "adm-summary": true };
   const isOpen = (key) => foldState[key] ?? false;
-  $("viewRaces").addEventListener("toggle", (e) => {
+  for (const id of ["viewRaces", "viewAdmin"]) $(id).addEventListener("toggle", (e) => {
     const k = e.target?.dataset?.fold;
     if (k) foldState[k] = e.target.open;
   }, true);
@@ -364,6 +645,7 @@
       setTimeout(start, RETRY_MS);
       return;
     }
+    if (adminIdFromHash()) { state.error = null; state.current = adminIdFromHash(); return enterAdmin(adminIdFromHash()); }
     if (location.hash === "#overall") { state.error = null; return selectTrack(OVERALL); }
     const fromHash = +((location.hash.match(/^#track-(\d+)$/) || [])[1] || 0);
     const pick =
@@ -376,6 +658,13 @@
   }
   window.addEventListener("hashchange", () => {
     if (state.stopped) return;
+    if (adminIdFromHash()) return enterAdmin(adminIdFromHash());
+    if (isAdmin()) {
+      exitAdmin();
+      state.view = "races";
+      const back = +((location.hash.match(/^#track-(\d+)$/) || [])[1] || adm.id);
+      return selectTrack(back, true);
+    }
     if (location.hash === "#overall") return selectTrack(OVERALL);
     const id = +((location.hash.match(/^#track-(\d+)$/) || [])[1] || 0);
     const t = state.tracks.find((x) => x.id === id);

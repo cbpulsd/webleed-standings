@@ -138,6 +138,44 @@ table{width:100%;border-collapse:collapse}
 .grid .sit{text-align:left;color:var(--muted)}
 .tbd{color:var(--dnf);font-style:italic}
 
+.races-foot{display:flex;justify-content:flex-end;padding-top:6px}
+.btn{display:inline-flex;align-items:center;gap:6px;font:600 13px var(--body);color:var(--ink);text-decoration:none;background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:7px 12px}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.live-pill{display:inline-flex;align-items:center;gap:5px;font:500 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ok);margin-left:4px;white-space:nowrap}
+.live-pill::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--ok)}
+
+/* Race director */
+.admin-mode .tracks-scroll,.admin-mode #status,.admin-mode .views,.admin-mode #viewTeams,.admin-mode #viewPilots,.admin-mode #viewRaces,.admin-mode #viewOverall{display:none!important}
+.gate{display:flex;flex-direction:column;gap:10px;max-width:360px;padding:20px;background:var(--surface);border:1px solid var(--line);border-radius:6px}
+.gate label{font-family:var(--display);font-weight:600;font-size:18px}
+.gate-row{display:flex;gap:8px}
+.gate input{flex:1;min-width:0;font:15px var(--body);color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:8px 10px}
+.gate input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.gate-msg{margin:0;color:var(--accent);font-size:13px}
+.gate a{color:var(--muted);font-size:13px}
+.admin-bar{position:sticky;top:env(safe-area-inset-top, 0px);z-index:3;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px;padding:10px 14px;background:var(--surface);border:1px solid var(--line);border-radius:6px}
+.save-state{display:flex;align-items:center;gap:8px;font-size:13px}
+.save-state::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--ok);flex:none}
+.save-state[data-state="busy"]::before{background:var(--warn);animation:pulse 1s infinite}
+.save-state[data-state="error"]{color:var(--accent)}
+.save-state[data-state="error"]::before{background:var(--accent)}
+.admin-actions{display:flex;gap:12px;align-items:center;font-size:13px}
+.admin-actions a{color:var(--muted)}
+.sit-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;margin-bottom:8px}
+.sit-card{display:flex;flex-direction:column;gap:6px;padding:10px 12px;background:var(--surface);border:1px solid var(--line);border-radius:6px;min-width:0}
+.sit-card label{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.sit-card label b{font-family:var(--display);font-weight:600;font-size:15px}
+.sit-hint{margin:0 0 8px;color:var(--muted);font-size:13px}
+.sit-card select{width:100%;font:14px var(--body);color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:6px 8px}
+.sit-card select.bad{border-color:var(--accent)}
+.lineup{display:flex;flex-wrap:wrap;gap:2px 10px;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+.admin-grid .tcell{padding:6px 6px;text-align:right;vertical-align:top}
+.tin{width:9.5ch;box-sizing:border-box;font:14px var(--mono);font-variant-numeric:tabular-nums;text-align:right;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:4px 5px}
+.tin:focus-visible{outline:2px solid var(--accent);outline-offset:1px;border-color:transparent}
+.tin.bad{border-color:var(--accent);background:var(--accent-soft)}
+.tres{display:block;min-height:1.2em;margin-top:2px;font:11px var(--mono);color:var(--muted);white-space:nowrap}
+
 .empty{padding:28px 20px;text-align:center;color:var(--muted);background:var(--surface);border:1px dashed var(--line);border-radius:6px}
 footer{color:var(--muted);font-size:12.5px;display:flex;flex-direction:column;gap:4px}
 
@@ -150,4 +188,4 @@ footer{color:var(--muted);font-size:12.5px;display:flex;flex-direction:column;ga
   .ocell{min-width:9.5rem}
   .overall th,.overall td{padding:8px 8px}
 }
-@media (prefers-reduced-motion: reduce){.status[data-state="busy"] .dot{animation:none}.fold>summary h2::before{transition:none}}
+@media (prefers-reduced-motion: reduce){.status[data-state="busy"] .dot{animation:none}.save-state[data-state="busy"]::before{animation:none}.fold>summary h2::before{transition:none}}

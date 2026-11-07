@@ -4,16 +4,24 @@
 //   GET  /api/tracks                          -> every track with its status, for the tabs
 //   GET  /api/tracks/:id                      -> one track's standings
 //   GET  /api/tracks/:id/history              -> that track's hourly snapshots
-//   GET  /api/tracks/:id/races                -> that track's race day: lineups, 4 tiers x 8 races, points
+//   GET  /api/tracks/:id/races                -> that track's race day: lineups, 4 tiers x 8 races, times, points
+//   GET  /api/tracks/:id/races/live           -> WebSocket: sends {"type":"update"} whenever race day changes
 //   GET  /api/overall                         -> season table: Smash and Race points per team per week
 //   GET  /api/health/source/:id               -> read-only check that the game endpoint answers (cached 5 min)
 //   POST /api/admin/tracks/:id/refresh|lock   -> manual controls (needs the ADMIN_TOKEN secret)
+//   Race director page (x-admin-password header):
+//   POST  /api/admin/login                       -> checks the password
+//   GET   /api/admin/tracks/:id/races            -> race day plus who sat out in earlier weeks
+//   PATCH /api/admin/tracks/:id/races/lineup     -> { sitting: { "<sponsor>": "<pilot>" | null } }
+//   PATCH /api/admin/tracks/:id/races/tiers/:n   -> { results: { "<race>": { "<sponsor>": "45.123" | "DNF" | null } } }
 //
 // The page in /public is served as static files and only reads from /api.
 
-import { ALIASES, LATE_LOCK_AFTER_MINUTES, LEAGUE, TEAMS, NO_VISIT_REFRESH_BEFORE_LOCK_MINUTES, SEASON, STALE_MINUTES, TRACKS } from "./config.js";
+import { ADMIN_PASSWORD_SHA256, ALIASES, LATE_LOCK_AFTER_MINUTES, RACES, LEAGUE, TEAMS, NO_VISIT_REFRESH_BEFORE_LOCK_MINUTES, SEASON, STALE_MINUTES, TRACKS } from "./config.js";
 import { computeStandings, norm, quadAllowed } from "./standings.js";
 import { computeRaces } from "./races.js";
+import { raceStore } from "./racestore.js";
+export { RaceRoom } from "./raceroom.js";
 import { fetchGameLeaderboard, gameRows } from "./gameapi.js";
 import { trackIdFromUrl } from "./leaderboard.js";
 import { getHistory, getRecord } from "./store.js";
@@ -70,12 +78,50 @@ export async function route(request, url, env, ctx, now, deps = {}) {
     return json(await overall(env, now), 200, "public, max-age=60");
   }
 
+  // /api/tracks/:id/races/live
+  if (request.method === "GET" && parts[1] === "tracks" && parts.length === 5 && parts[3] === "races" && parts[4] === "live") {
+    const track = findTrack(parts[2]);
+    if (!track) return json({ error: "no such track" }, 404, "no-store");
+    return raceStore(env, track.id).connect(request);
+  }
+
   // /api/tracks/:id/races
   if (request.method === "GET" && parts[1] === "tracks" && parts.length === 4 && parts[3] === "races") {
     const track = findTrack(parts[2]);
     if (!track) return json({ error: "no such track" }, 404, "no-store");
-    const saved = await env.STANDINGS.get(`races:${track.id}`, "json");
-    return json({ track: track.id, ...computeRaces(track, saved, teamsFor(track)) }, 200, "public, max-age=60");
+    return json(await racesFor(env, track, now), 200, "no-store");
+  }
+
+  // Race director page
+  if (parts[1] === "admin" && (parts[2] === "login" || (parts[2] === "tracks" && parts[4] === "races"))) {
+    if (!(await passwordOk(env, request.headers.get("x-admin-password")))) return json({ error: "wrong password" }, 403, "no-store");
+    if (parts[2] === "login") return json({ ok: true }, 200, "no-store");
+    const track = findTrack(parts[3]);
+    if (!track) return json({ error: "no such track" }, 404, "no-store");
+
+    if (request.method === "GET" && parts.length === 5) {
+      return json({ ...(await racesFor(env, track, now)), satBefore: await satBefore(env, track) }, 200, "no-store");
+    }
+    if (request.method === "PATCH" && (parts[5] === "lineup" || parts[5] === "tiers")) {
+      const body = await request.json().catch(() => null);
+      if (!body) return json({ error: "send JSON" }, 400, "no-store");
+      const teams = teamsFor(track);
+      const stamp = new Date(now).toISOString();
+      const store = raceStore(env, track.id);
+      try {
+        if (parts[5] === "lineup" && parts.length === 6) {
+          await store.patch("lineup", null, body.sitting, teams, stamp);
+        } else if (parts[5] === "tiers" && parts.length === 7) {
+          const tier = Number(parts[6]);
+          if (!Number.isInteger(tier) || tier < 1 || tier > RACES.tiers) return json({ error: "no such tier" }, 404, "no-store");
+          await store.patch("tier", tier, body.results, teams, stamp);
+        } else return json({ error: "not found" }, 404, "no-store");
+      } catch (err) {
+        return json({ error: String(err?.message || err) }, 400, "no-store");
+      }
+      return json(await racesFor(env, track, now), 200, "no-store");
+    }
+    return json({ error: "not found" }, 404, "no-store");
   }
 
   // /api/tracks/:id and /api/tracks/:id/history
@@ -205,6 +251,33 @@ async function overall(env, now) {
   return { weeks, teams, updatedAt: saved.updatedAt || null };
 }
 
+async function passwordOk(env, given) {
+  if (!given) return false;
+  if (env.ADMIN_PASSWORD) return given === env.ADMIN_PASSWORD;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(given));
+  const hex = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  return hex === ADMIN_PASSWORD_SHA256;
+}
+
+// Race day for a track, with lineups set from its Smash standings.
+async function racesFor(env, track, now) {
+  const store = raceStore(env, track.id);
+  const [docs, record] = await Promise.all([store.docs(), track.leaderboardUrl ? getRecord(env, track.id) : null]);
+  const standings = record ? (record.status === "locked" ? record.standings : standingsFor(track, record.rows)) : null;
+  return { track: track.id, live: store.live, version: docs.version ?? null, ...computeRaces(track, docs, teamsFor(track), standings) };
+}
+
+// Who each team sat out in the other weeks: { "<sponsor>": { "<pilot>": [weekIds] } }
+async function satBefore(env, track) {
+  const others = TRACKS.filter((t) => t.id !== track.id);
+  const docs = await Promise.all(others.map((t) => raceStore(env, t.id).docs()));
+  const out = {};
+  docs.forEach((doc, i) => {
+    for (const [sponsor, pilot] of Object.entries(doc?.lineup?.sitting || {})) ((out[sponsor] ||= {})[pilot] ||= []).push(others[i].id);
+  });
+  return out;
+}
+
 function summary(track, record, now) {
   const status = trackStatus(track, record, now);
   return {
@@ -239,7 +312,7 @@ function nextHour(now, lockAt) {
   return new Date(t).toISOString();
 }
 
-const cors = () => ({ "access-control-allow-origin": "*", "access-control-allow-methods": "GET, OPTIONS" });
+const cors = () => ({ "access-control-allow-origin": "*", "access-control-allow-methods": "GET, OPTIONS" }); // admin writes are same-site only
 
 function json(body, status, cacheControl) {
   return new Response(JSON.stringify(body), {
