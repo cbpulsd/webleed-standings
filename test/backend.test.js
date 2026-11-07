@@ -401,9 +401,16 @@ test("races: 4 tiers x 8 races per team, blank until race day", async () => {
 });
 
 const PW = "webleedadmin";
-const call = (env, method, path, body, pw = PW, now = LOCK + HOUR, deps = {}) =>
-  route(new Request("https://x.dev" + path, { method, headers: { "content-type": "application/json", ...(pw ? { "x-admin-password": pw } : {}) }, body: body ? JSON.stringify(body) : undefined }),
-    new URL("https://x.dev" + path), env, ctx(), now, deps);
+const req = (env, method, path, headers, body, now = LOCK + HOUR) =>
+  route(new Request("https://x.dev" + path, { method, headers: { "content-type": "application/json", ...headers }, body: body ? JSON.stringify(body) : undefined }),
+    new URL("https://x.dev" + path), env, ctx(), now, {});
+const login = async (env, pw = PW, now = LOCK + HOUR) => (await (await req(env, "POST", "/api/admin/login", { "x-admin-password": pw }, null, now)).json()).session;
+// Signed-in call: signs in with the password once, then sends the session pass.
+const sessions = new WeakMap();
+const call = async (env, method, path, body, now = LOCK + HOUR) => {
+  if (!sessions.has(env)) sessions.set(env, await login(env));
+  return req(env, method, path, { "x-admin-session": sessions.get(env) }, body, now);
+};
 
 // The real RaceRoom class behind a stand-in for Cloudflare's Durable Object plumbing.
 function fakeRaceRooms() {
@@ -443,17 +450,36 @@ test("race times rank into positions: fastest 1st, ties share, DNF 0, blanks ign
   assert.equal(parseRaceTime("-3"), undefined);
 });
 
-test("race director: wrong or missing password can't read or save", async () => {
+test("race director: password signs in once; the 24-hour pass is checked on every request", async () => {
   const env = { STANDINGS: new MemoryKV() };
-  assert.equal((await call(env, "POST", "/api/admin/login", null, "nope")).status, 403);
-  assert.equal((await call(env, "POST", "/api/admin/login", null, null)).status, 403);
-  assert.equal((await call(env, "POST", "/api/admin/login")).status, 200);
-  assert.equal((await call(env, "PATCH", "/api/admin/tracks/1/races/lineup", { sitting: { WREKD: "xer" } }, "WebleedAdmin")).status, 403);
-  assert.equal((await call(env, "GET", "/api/admin/tracks/1/races", null, null)).status, 403);
-  assert.equal(env.STANDINGS.writes, 0);
+  const wrong = await req(env, "POST", "/api/admin/login", { "x-admin-password": "nope" });
+  assert.equal(wrong.status, 403);
+  assert.equal((await req(env, "POST", "/api/admin/login", {})).status, 403);
+
+  const ok = await (await req(env, "POST", "/api/admin/login", { "x-admin-password": PW })).json();
+  assert.match(ok.session, /^\d+\.[0-9a-f]{64}$/);
+  assert.equal(Date.parse(ok.expiresAt) - (LOCK + HOUR), 24 * HOUR);
+  assert.ok(!ok.session.includes(PW));
+
+  const edit = (session, now) => req(env, "PATCH", "/api/admin/tracks/1/races/lineup", session ? { "x-admin-session": session } : {}, { sitting: { WREKD: "xer" } }, now);
+  assert.equal((await edit(ok.session)).status, 200, "the pass works");
+  assert.equal((await edit(ok.session, LOCK + HOUR + 24 * HOUR - 1000)).status, 200, "still good just before 24 hours");
+  assert.equal((await edit(ok.session, LOCK + HOUR + 24 * HOUR + 1)).status, 403, "expired after 24 hours");
+  const writes = env.STANDINGS.writes;
+  assert.equal((await edit(null)).status, 403);
+  assert.equal((await req(env, "PATCH", "/api/admin/tracks/1/races/lineup", { "x-admin-password": PW }, { sitting: { WREKD: "xer" } })).status, 403, "edits need the pass, not the password");
+  const [exp, sig] = ok.session.split(".");
+  assert.equal((await edit(`${Number(exp) + HOUR}.${sig}`)).status, 403, "a longer expiry can't be forged");
+  assert.equal((await edit(`${exp}.${"0".repeat(64)}`)).status, 403);
+  assert.equal((await req(env, "GET", "/api/admin/tracks/1/races", {})).status, 403);
+  assert.equal(env.STANDINGS.writes, writes);
+
+  // A Worker ADMIN_PASSWORD secret replaces the password and signs old passes out.
   const env2 = { STANDINGS: new MemoryKV(), ADMIN_PASSWORD: "other" };
-  assert.equal((await call(env2, "POST", "/api/admin/login")).status, 403, "a Worker secret overrides the built-in password");
-  assert.equal((await call(env2, "POST", "/api/admin/login", null, "other")).status, 200);
+  assert.equal((await req(env2, "POST", "/api/admin/login", { "x-admin-password": PW })).status, 403);
+  assert.equal((await req(env2, "PATCH", "/api/admin/tracks/1/races/lineup", { "x-admin-session": ok.session }, { sitting: {} })).status, 403);
+  const s2 = await login(env2, "other");
+  assert.equal((await req(env2, "PATCH", "/api/admin/tracks/1/races/lineup", { "x-admin-session": s2 }, { sitting: {} })).status, 200);
 });
 
 for (const [label, makeEnv] of STORES) {

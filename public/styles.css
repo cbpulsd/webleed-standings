@@ -162,6 +162,7 @@ table{width:100%;border-collapse:collapse}
 .save-state[data-state="error"]::before{background:var(--accent)}
 .admin-actions{display:flex;gap:12px;align-items:center;font-size:13px}
 .admin-actions a{color:var(--muted)}
+.signed-in{color:var(--muted);font-size:12px}
 .sit-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;margin-bottom:8px}
 .sit-card{display:flex;flex-direction:column;gap:6px;padding:10px 12px;background:var(--surface);border:1px solid var(--line);border-radius:6px;min-width:0}
 .sit-card label{display:flex;justify-content:space-between;align-items:baseline;gap:8px}

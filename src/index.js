@@ -9,8 +9,8 @@
 //   GET  /api/overall                         -> season table: Smash and Race points per team per week
 //   GET  /api/health/source/:id               -> read-only check that the game endpoint answers (cached 5 min)
 //   POST /api/admin/tracks/:id/refresh|lock   -> manual controls (needs the ADMIN_TOKEN secret)
-//   Race director page (x-admin-password header):
-//   POST  /api/admin/login                       -> checks the password
+//   Race director page. Sign in once; the pass goes in an x-admin-session header:
+//   POST  /api/admin/login                       -> x-admin-password: <password>  =>  { session, expiresAt } (24 hours)
 //   GET   /api/admin/tracks/:id/races            -> race day plus who sat out in earlier weeks
 //   PATCH /api/admin/tracks/:id/races/lineup     -> { sitting: { "<sponsor>": "<pilot>" | null } }
 //   PATCH /api/admin/tracks/:id/races/tiers/:n   -> { results: { "<race>": { "<sponsor>": "45.123" | "DNF" | null } } }
@@ -94,8 +94,12 @@ export async function route(request, url, env, ctx, now, deps = {}) {
 
   // Race director page
   if (parts[1] === "admin" && (parts[2] === "login" || (parts[2] === "tracks" && parts[4] === "races"))) {
-    if (!(await passwordOk(env, request.headers.get("x-admin-password")))) return json({ error: "wrong password" }, 403, "no-store");
-    if (parts[2] === "login") return json({ ok: true }, 200, "no-store");
+    if (parts[2] === "login") {
+      if (request.method !== "POST" || !(await passwordOk(env, request.headers.get("x-admin-password")))) return json({ error: "wrong password" }, 403, "no-store");
+      const expiresAt = now + SESSION_HOURS * 3_600_000;
+      return json({ session: await signSession(env, expiresAt), expiresAt: new Date(expiresAt).toISOString() }, 200, "no-store");
+    }
+    if (!(await sessionOk(env, request.headers.get("x-admin-session"), now))) return json({ error: "signed out" }, 403, "no-store");
     const track = findTrack(parts[3]);
     if (!track) return json({ error: "no such track" }, 404, "no-store");
 
@@ -251,12 +255,31 @@ async function overall(env, now) {
   return { weeks, teams, updatedAt: saved.updatedAt || null };
 }
 
+// Race director sign-in pass: "<expiry ms>.<HMAC-SHA256 of it>", keyed on the password
+// (so changing the password signs everyone out). Good for SESSION_HOURS.
+const SESSION_HOURS = 24;
+const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+async function sessionKey(env) {
+  const secret = env.ADMIN_PASSWORD ? `pw:${env.ADMIN_PASSWORD}` : `hash:${ADMIN_PASSWORD_SHA256}`;
+  return crypto.subtle.importKey("raw", new TextEncoder().encode(`webleed-session|${secret}`), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+}
+async function signSession(env, expiresAt) {
+  const sig = await crypto.subtle.sign("HMAC", await sessionKey(env), new TextEncoder().encode(String(expiresAt)));
+  return `${expiresAt}.${hex(sig)}`;
+}
+async function sessionOk(env, session, now) {
+  const m = /^(\d{10,16})\.([0-9a-f]{64})$/.exec(session || "");
+  if (!m || Number(m[1]) <= now || Number(m[1]) > now + SESSION_HOURS * 3_600_000 + 60_000) return false;
+  const expected = (await signSession(env, Number(m[1]))).split(".")[1];
+  let diff = 0;
+  for (let i = 0; i < 64; i++) diff |= expected.charCodeAt(i) ^ m[2].charCodeAt(i);
+  return diff === 0;
+}
+
 async function passwordOk(env, given) {
   if (!given) return false;
   if (env.ADMIN_PASSWORD) return given === env.ADMIN_PASSWORD;
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(given));
-  const hex = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
-  return hex === ADMIN_PASSWORD_SHA256;
+  return hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(given))) === ADMIN_PASSWORD_SHA256;
 }
 
 // Race day for a track, with lineups set from its Smash standings.

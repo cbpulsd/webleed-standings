@@ -334,11 +334,25 @@
   }
 
   // ---------- race director page (#admin-<track>) ----------
-  const PW_KEY = "webleedRaceDirector";
-  const adm = { id: null, pw: null, pwMem: null, data: null, satBefore: {}, saving: 0, error: null, savedAt: null };
-  const getPw = () => { try { return sessionStorage.getItem(PW_KEY) || adm.pwMem; } catch (e) { return adm.pwMem; } };
-  const setPw = (v) => { adm.pwMem = v; try { v ? sessionStorage.setItem(PW_KEY, v) : sessionStorage.removeItem(PW_KEY); } catch (e) {} };
-  const adminApi = (path, init = {}) => api("/admin" + path, { ...init, headers: { "content-type": "application/json", "x-admin-password": adm.pw || "" } });
+  // Sign-in pass from the Worker (not the password), kept in localStorage so every tab on
+  // this browser is signed in until it expires (24 hours) or someone signs out.
+  const PASS_KEY = "webleedRaceDirector";
+  const adm = { id: null, pass: null, passMem: null, data: null, satBefore: {}, saving: 0, error: null, savedAt: null };
+  function getPass() {
+    let p;
+    // Memory copy only when the browser blocks storage; otherwise storage is the truth,
+    // so signing out in another tab takes effect here too.
+    try { p = JSON.parse(localStorage.getItem(PASS_KEY) || "null"); } catch (e) { p = adm.passMem; }
+    if (!p || !p.session || Date.parse(p.expiresAt) <= Date.now()) { if (p) setPass(null); return null; }
+    return p;
+  }
+  function setPass(p) {
+    adm.passMem = p;
+    try { p ? localStorage.setItem(PASS_KEY, JSON.stringify(p)) : localStorage.removeItem(PASS_KEY); } catch (e) {}
+  }
+  const adminApi = (path, init = {}) =>
+    api("/admin" + path, { ...init, headers: { "content-type": "application/json", "x-admin-session": adm.pass?.session || "", ...(init.headers || {}) } });
+  const signedOut = (message) => { setPass(null); adm.pass = null; liveStop(); renderGate(message); };
   const adminIdFromHash = () => +((location.hash.match(/^#admin-(\d+)$/) || [])[1] || 0);
   const isAdmin = () => state.mode === "admin";
   const timeFmt2 = new Intl.DateTimeFormat([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
@@ -366,8 +380,8 @@
     $("title").textContent = `Race Director · ${t ? t.name : "Track " + id}`;
     document.title = `Race Director · ${t ? t.name : "Track " + id}`;
     $("sub").textContent = "Pick who sits out for each team, then type each pilot's race time. Every change saves when you leave the box and shows on the Races tab right away.";
-    adm.pw = getPw();
-    if (adm.pw) loadAdmin(); else renderGate();
+    adm.pass = getPass();
+    if (adm.pass) loadAdmin(); else renderGate();
   }
 
   function exitAdmin() {
@@ -394,7 +408,7 @@
     if (!adm.data) $("viewAdmin").innerHTML = `<div class="empty">Opening race day…</div>`;
     try {
       const res = await adminApi(`/tracks/${id}/races`);
-      if (res.status === 403) { setPw(null); adm.pw = null; return renderGate("Please enter the password again."); }
+      if (res.status === 403) return signedOut("Your sign-in has expired. Please enter the password again.");
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
       if (!isAdmin() || adm.id !== id) return;
@@ -446,7 +460,7 @@
     $("viewAdmin").innerHTML = `
       <div class="admin-bar">
         <span class="save-state" id="saveState" data-state="ok">All changes saved</span>
-        <span class="admin-actions"><a href="#track-${adm.id}">Back to Races</a><button type="button" id="signOut">Sign out</button></span>
+        <span class="admin-actions"><span class="signed-in">Signed in until ${esc(dayFmt.format(new Date(adm.pass.expiresAt)))}</span><a href="#track-${adm.id}">Back to Races</a><button type="button" id="signOut">Sign out</button></span>
       </div>
       <p class="races-note">Times are in seconds (45.123 or 1:05.432). Type <b>DNF</b> for a pilot who didn't finish, or clear the box to remove a time. The fastest time in each race finishes 1st.</p>
       ${fold("adm-sit", "Who sits out", `${picked} of ${d.teams.length} picked`, `<p class="sit-hint">Pilots are listed in their team's Smash order for this track. The four who race fill Tiers 1–4 in that order.</p><div class="sit-grid">${sitCards}</div>`)}
@@ -515,7 +529,7 @@
     try {
       const res = await adminApi(path, { method: "PATCH", body: JSON.stringify(body) });
       const out = await res.json().catch(() => ({}));
-      if (res.status === 403) { setPw(null); adm.pw = null; adm.saving--; liveStop(); return renderGate("Please enter the password again. Your last change wasn't saved."); }
+      if (res.status === 403) { adm.saving--; return signedOut("Your sign-in has expired, so your last change wasn't saved. Please enter the password again."); }
       if (!res.ok) throw new Error(out.error || `HTTP ${res.status}`);
       delete el.dataset.dirty;
       el.classList.remove("bad");
@@ -556,20 +570,27 @@
     if (e.target.id !== "gateForm") return;
     e.preventDefault();
     const pw = $("adminPw").value;
-    adm.pw = pw;
     try {
-      const res = await adminApi("/login", { method: "POST" });
-      if (!res.ok) { adm.pw = null; return renderGate(res.status === 403 ? "That password didn't work." : `Couldn't check the password (HTTP ${res.status}).`); }
-      setPw(pw);
+      const res = await api("/admin/login", { method: "POST", headers: { "x-admin-password": pw } });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.session) return renderGate(res.status === 403 ? "That password didn't work." : `Couldn't check the password (HTTP ${res.status}).`);
+      adm.pass = { session: body.session, expiresAt: body.expiresAt };
+      setPass(adm.pass);
       loadAdmin();
     } catch (err) {
-      adm.pw = null;
       renderGate(`Couldn't check the password (${err.message}).`);
     }
   });
   $("viewAdmin").addEventListener("click", (e) => {
     if (e.target.id !== "signOut") return;
-    setPw(null); adm.pw = null; liveStop(); renderGate("Signed out.");
+    signedOut("Signed out.");
+  });
+  // Signing in or out in one tab does the same in this browser's other tabs.
+  window.addEventListener("storage", (e) => {
+    if (e.key !== PASS_KEY || !isAdmin()) return;
+    const p = getPass();
+    if (!p && adm.pass) { adm.pass = null; liveStop(); renderGate("Signed out in another tab."); }
+    else if (p && !adm.pass) { adm.pass = p; adm.data = null; loadAdmin(); }
   });
   window.addEventListener("beforeunload", (e) => { if (isAdmin() && adm.saving) { e.preventDefault(); e.returnValue = ""; } });
 
