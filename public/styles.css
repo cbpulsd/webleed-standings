@@ -256,3 +256,6 @@ footer{color:var(--muted);font-size:12.5px;display:flex;flex-direction:column;ga
 }
 @media (prefers-reduced-motion: reduce){.status[data-state="busy"] .dot{animation:none}.save-state[data-state="busy"]::before{animation:none}.fold>summary h2::before{transition:none}}
 @media (max-width:420px){.stbl th,.stbl td{padding:6px 5px}}
+.overall .rc b{display:block;font-weight:600}
+.overall .rc small{display:block;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.overall .rc small.dnf{letter-spacing:.04em}

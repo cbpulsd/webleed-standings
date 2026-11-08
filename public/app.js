@@ -292,13 +292,13 @@
           <thead><tr><th class="team-col" scope="col">Team · Pilot</th>${Array.from({ length: d.racesPerTier }, (_, i) => `<th class="num${i === 0 ? " wk-start" : ""}" scope="col">R${i + 1}</th>`).join("")}<th class="num tot" scope="col">Total</th></tr></thead>
           <tbody>${t.entries.map((e) => `<tr>
             <th class="team-col" scope="row"><div class="ocell">${place(e.place)}<span class="oname"><b>Team ${esc(e.sponsor)}</b><small>${pilotLabel(e.pilot)}</small></span></div></th>
-            ${e.points.map((p, i) => `<td class="num${i === 0 ? " wk-start" : ""}"${e.times?.[i] != null ? ` title="${resultTitle(e.times[i], e.positions[i])}"` : ""}>${pts(p)}</td>`).join("")}
+            ${e.points.map((p, i) => { const tm = e.times?.[i]; return `<td class="num rc${i === 0 ? " wk-start" : ""}"${tm != null ? ` title="${resultTitle(tm, e.positions[i])}"` : ""}>${tm == null ? pts(p) : `<b>${pts(p)}</b><small${tm === "dnf" ? ' class="dnf"' : ""}>${fmtTime(tm)}</small>`}</td>`; }).join("")}
             <td class="num tot">${pts(e.total)}</td>
           </tr>`).join("")}</tbody>
         </table></div>`)).join("");
 
     el.innerHTML = `
-      <p class="races-note"><b>Race day: ${esc(raceDayText(d))}.</b> Each team races four of its five pilots, one per tier, and sits one. Every tier runs ${d.racesPerTier} races. Points by finishing position: ${pointsLine}.${anyResults ? "" : " Lineups and results appear here on race day."}${d.live ? ' <span class="live-pill">Updates live</span>' : ""}</p>
+      <p class="races-note"><b>Race day: ${esc(raceDayText(d))}.</b> Each team races four of its five pilots, one per tier, and sits one. Every tier runs ${d.racesPerTier} races. Points by finishing position: ${pointsLine}. In each tier, a race shows the points earned and the pilot's 3-lap time underneath.${anyResults ? "" : " Lineups and results appear here on race day."}${d.live ? ' <span class="live-pill">Updates live</span>' : ""}</p>
       ${fold("summary", "Team race points", leaderOf(d.teams), summary)}
       ${tierTables}
       <div class="races-foot"><a class="btn" href="#admin-${d.track}">Race director: enter results</a></div>`;
