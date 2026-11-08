@@ -10,6 +10,7 @@ import { encrypt } from "../src/gameapi.js";
 import { RaceRoom } from "../src/raceroom.js";
 import { parseRaceTime, positionsFor } from "../src/races.js";
 import { diffEvents } from "../src/standings.js";
+import seed1 from "../src/seed/track1.js";
 
 const T1 = TRACKS[0];
 const LOCK = Date.parse(T1.locksAt);
@@ -616,7 +617,7 @@ test("each refresh records first times and new personal bests on the required qu
 });
 
 test("stats: team totals over time, new bests, biggest grinders", async () => {
-  const env = { STANDINGS: new MemoryKV() };
+  const env = { STANDINGS: new MemoryKV(), STATS_SEEDS: {} };
   const site = fakeSite([]);
   const five = (team) => [team.captain, ...team.pilots];
   const [emax, wrekd] = [TEAMS[0], TEAMS[7]];
@@ -637,20 +638,15 @@ test("stats: team totals over time, new bests, biggest grinders", async () => {
   assert.equal(st.activity.length, 5, "the first save has nothing to compare with, so only the 10 PM bests count");
 });
 
-test("one-time import fills history before ours began and sets events; needs director sign-in", async () => {
+test("stats include the repo-kept Track 1 data from before our history began, without double counting", async () => {
   const env = { STANDINGS: new MemoryKV() };
+  const seedEvent = seed1.events.find((e) => e.kind === "pb");
   await env.STANDINGS.put("history:1", JSON.stringify([{ at: "2026-11-03T22:22:29.151Z", teams: [["WREKD", 400, 5]], pilots: {} }]));
-  const body = {
-    history: [
-      { at: "2026-11-02T00:00:00.000Z", teams: [["WREKD", 500, 4]], pilots: {} },
-      { at: "2026-11-03T23:00:00.000Z", teams: [["WREKD", 1, 5]], pilots: {} }, // after ours began: ignored
-      { at: "2026-11-02T01:00:00.000Z", nope: true },
-    ],
-    events: [{ at: "2026-11-02T01:00:00.000Z", name: "TMAD", kind: "pb", prev: 70, time: 69, rank: 5 }, { bad: 1 }],
-  };
-  assert.equal((await req(env, "POST", "/api/admin/tracks/1/backfill", {}, body)).status, 403);
-  const r = await call(env, "POST", "/api/admin/tracks/1/backfill", body);
-  assert.deepEqual(await r.json(), { historyAdded: 1, historyTotal: 2, events: 1 });
-  const h = await env.STANDINGS.get("history:1", "json");
-  assert.deepEqual(h.map((x) => x.teams[0][1]), [500, 400]);
+  await env.STANDINGS.put("events:1", JSON.stringify([seedEvent])); // same new best recorded here too
+  const st = await get(env, "/api/tracks/1/stats", LOCK + HOUR, {});
+  assert.equal(st.from, "2026-11-02T00:00:00.000Z");
+  assert.equal(st.teams.find((t) => t.sponsor === "WREKD").series.length, seed1.history.length + 1);
+  assert.equal(st.summary.newBests, 273);
+  assert.ok(seed1.history.every((h) => h.at < "2026-11-03T22:22:29.151Z"));
+  assert.equal((await route(new Request("https://x/api/admin/tracks/1/backfill", { method: "POST" }), new URL("https://x/api/admin/tracks/1/backfill"), env, { waitUntil() {} }, LOCK + HOUR)).status >= 400, true, "no import route");
 });
