@@ -1,7 +1,7 @@
 /* Layout: scoreboard stack — track tabs, status strip, view switch, then ranked team blocks with pilot splits */
 :root{
   /* chart series (categorical slots 1-4, dataviz reference palette) and heat ramp */
-  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s-other:#b8bdca;
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300; --s7:#6250d6; --s8:#e34948;
   --h1:#cde2fb; --h2:#9ec5f4; --h3:#6da7ec; --h4:#3987e5; --h5:#256abf; --h6:#184f95;
   --bg:#eef0f5; --surface:#ffffff; --sunken:#e4e7ee; --ink:#131722; --muted:#5a6276; --line:#dce0e9;
   --accent:#cf1f3a; --accent-soft:#fbe5e9; --ok:#1d7a4f; --warn:#a1580c; --dnf:#8a90a0;
@@ -14,7 +14,7 @@
   :root:not([data-theme="light"]){
     --bg:#0c0f16; --surface:#141924; --sunken:#0f131c; --ink:#e8ebf2; --muted:#8e96aa; --line:#242b39;
     --accent:#ff4f69; --accent-soft:#3a1720; --ok:#4cc38a; --warn:#e9a24d; --dnf:#6b7285;
-    --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s-other:#3a4152;
+    --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
     --h1:#1b2a44; --h2:#184f95; --h3:#1c5cab; --h4:#2a78d6; --h5:#5598e7; --h6:#9ec5f4;
     color-scheme:dark;
   }
@@ -22,7 +22,7 @@
 :root[data-theme="dark"]{
   --bg:#0c0f16; --surface:#141924; --sunken:#0f131c; --ink:#e8ebf2; --muted:#8e96aa; --line:#242b39;
   --accent:#ff4f69; --accent-soft:#3a1720; --ok:#4cc38a; --warn:#e9a24d; --dnf:#6b7285;
-  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s-other:#3a4152;
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
   --h1:#1b2a44; --h2:#184f95; --h3:#1c5cab; --h4:#2a78d6; --h5:#5598e7; --h6:#9ec5f4;
   color-scheme:dark;
 }
@@ -197,18 +197,22 @@ table{width:100%;border-collapse:collapse}
 .chart-box text{font-family:var(--mono);font-size:11px;fill:var(--muted)}
 .chart-box .lbl{fill:var(--ink);font-family:var(--body);font-size:12px;font-weight:600}
 .chart-box .grid{stroke:var(--line);stroke-width:1}
-.chart-box .tline{fill:none;stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round}
-.chart-box .tline.top{stroke-width:2.25}
-.chart-box .tline.dim{opacity:.18}
+.chart-box .tline{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.chart-box .tline.dim,.chart-box .lbl.dim{opacity:.15}
 .chart-box .tline.hot{stroke-width:3;opacity:1}
+.chart-box .tline,.chart-box .lbl{transition:opacity .15s}
 .chart-box .xhair{stroke:var(--muted);stroke-width:1;stroke-dasharray:3 3}
-.legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12.5px;color:var(--muted)}
-.legend i{display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:6px;vertical-align:middle}
+.legend{display:flex;flex-wrap:wrap;gap:2px 4px;font-size:12.5px}
+.legend button{font:inherit;color:var(--ink);background:none;border:0;border-radius:4px;padding:3px 6px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:opacity .15s}
+.legend button:hover{background:var(--sunken)}
+.legend button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.legend button.dim{opacity:.4}
+.sw{display:inline-block;flex:none;width:16px;height:3px;border-radius:2px;background:var(--c)}
+.sw.dash{background:repeating-linear-gradient(90deg,var(--c) 0 5px,transparent 5px 8px)}
 .tip{position:absolute;pointer-events:none;z-index:4;min-width:180px;max-width:260px;padding:8px 10px;background:var(--surface);border:1px solid var(--line);border-radius:6px;box-shadow:0 4px 14px color-mix(in srgb, var(--ink) 18%, transparent);font-size:12px}
 .tip b{display:block;font-family:var(--display);font-size:13px;margin-bottom:4px}
 .tip div{display:flex;justify-content:space-between;gap:12px;font-family:var(--mono);font-variant-numeric:tabular-nums}
 .tip div span:first-child{font-family:var(--body);display:flex;align-items:center;gap:6px}
-.tip i{width:8px;height:8px;border-radius:2px;display:inline-block}
 .tip .hot{font-weight:700;color:var(--ink)}
 .bars{display:flex;flex-direction:column;gap:6px}
 .bar-row{display:grid;grid-template-columns:minmax(8.5rem,11rem) 1fr;gap:10px;align-items:center;font-size:13px}

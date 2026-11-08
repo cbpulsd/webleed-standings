@@ -313,7 +313,7 @@
     return { day: `${p.year}-${p.month}-${p.day}`, hour: +p.hour };
   };
   const secs = (v, d = 3) => (v == null ? "–" : v.toFixed(d));
-  const SERIES = ["var(--s1)", "var(--s2)", "var(--s3)", "var(--s4)"];
+  const SERIES = ["var(--s1)", "var(--s2)", "var(--s3)", "var(--s4)", "var(--s5)", "var(--s6)", "var(--s7)", "var(--s8)"];
 
   async function loadStats(quiet = false) {
     const id = state.current;
@@ -340,70 +340,46 @@
     const d = st.data;
     if (!d.teams.some((t) => t.series.length)) { el.innerHTML = `<div class="empty">Stats appear once this track has been running for an hour or two.</div>`; return; }
 
-    // Final order decides the four highlighted teams; everyone else is drawn in gray.
-    const finalOrder = [...d.teams].filter((t) => t.finalTotal != null).sort((a, b) => a.finalTotal - b.finalTotal);
-    const colorOf = new Map(finalOrder.slice(0, 4).map((t, i) => [t.sponsor, SERIES[i]]));
-    const s = d.summary;
-    const cuts = [...d.teams].filter((t) => t.cut != null).sort((a, b) => b.cut - a.cut);
-    const maxCut = Math.max(1, ...cuts.map((t) => t.cut));
+    // Each team keeps one look for the whole week (roster order, not rank): eight hues,
+    // then the 9th and 10th teams reuse the first two hues as dashed lines.
+    const looks = new Map(d.teams.map((t, i) => [t.sponsor, { color: SERIES[i % SERIES.length], dash: i >= SERIES.length }]));
+    const swatch = (sp) => { const l = looks.get(sp); return `<i class="sw${l.dash ? " dash" : ""}" style="--c:${l.color}"></i>`; };
+    const order = [...d.teams].sort((a, b) => (a.finalTotal ?? 1e9) - (b.finalTotal ?? 1e9));
 
     el.innerHTML = `
-      <p class="races-note">From ${esc(etTime.format(new Date(d.from)))} to ${esc(etTime.format(new Date(d.to)))} Eastern. Team totals are saved every hour; new personal bests are counted for rostered pilots on the track's required quad.</p>
+      <p class="races-note">From ${esc(etTime.format(new Date(d.from)))} to ${esc(etTime.format(new Date(d.to)))} Eastern. Team totals are saved every hour. New personal bests count for rostered pilots on the track's required quad.</p>
       <div class="stat-tiles">
-        <div class="tile"><b>${s.newBests}</b><span>new personal bests by rostered pilots</span></div>
-        <div class="tile"><b>${s.pilotsImproved}</b><span>pilots improved at least once</span></div>
-        <div class="tile"><b>${secs(s.secondsCut, 1)}s</b><span>cut from team totals, all teams</span></div>
-        <div class="tile"><b>${s.teamLeadChanges}</b><span>changes of team lead</span></div>
+        <div class="tile"><b>${d.summary.newBests}</b><span>new personal bests by rostered pilots</span></div>
       </div>
 
       <section class="chart-card" aria-label="Team totals over time">
         <div class="sec-head"><h2>Team totals over time</h2><span>lower is faster</span></div>
-        <div class="legend">${finalOrder.slice(0, 4).map((t, i) => `<span><i style="background:${SERIES[i]}"></i>${esc(t.sponsor)}</span>`).join("")}<span><i style="background:var(--s-other)"></i>Other teams (hover to highlight)</span></div>
+        <div class="legend">${order.map((t) => `<button type="button" data-team="${esc(t.sponsor)}">${swatch(t.sponsor)}${esc(t.sponsor)}</button>`).join("")}</div>
         <div class="chart-box" id="teamChart"></div>
-        <p class="sub">Each team's line starts once all five of its pilots have a time. Hover or tap the chart to see every team's total for that hour.</p>
-        ${d.leadChanges.length ? `<ul class="lead-list">${d.leadChanges.map((l) => `<li><span>${esc(etTime.format(new Date(l.at)))}</span>Team ${esc(l.to)} took the lead from Team ${esc(l.from)} (${secs(l.total)})</li>`).join("")}</ul>` : `<p class="sub">Team ${esc(finalOrder[0]?.sponsor || "")} led from start to finish.</p>`}
+        <p class="sub">Each team's line starts once all five of its pilots have a time. Hover or tap the chart to see every team's total for that hour; hover a team name to pick out its line.</p>
       </section>
-
-      <section class="chart-card" aria-label="Time cut per team">
-        <div class="sec-head"><h2>Time cut per team</h2><span>from first 5/5 total to final</span></div>
-        <div class="bars">${cuts.map((t) => `
-          <div class="bar-row" title="Team ${esc(t.sponsor)}: ${secs(t.startTotal)} → ${secs(t.finalTotal)}">
-            <span class="bn">Team ${esc(t.sponsor)}</span>
-            <div class="bar-track"><div class="bar-fill" style="width:calc((100% - 4.5rem) * ${(t.cut / maxCut).toFixed(4)})"></div><span class="bar-val" style="left:calc((100% - 4.5rem) * ${(t.cut / maxCut).toFixed(4)})">−${secs(t.cut, 1)}s</span></div>
-            ${t.bestHour ? `<small>Biggest hour: −${secs(t.bestHour.drop, 1)}s, ${esc(etTime.format(new Date(t.bestHour.at)))}</small>` : ""}
-          </div>`).join("")}
-        </div>
-      </section>
-
-      <div class="two-col">
-        <section class="chart-card" aria-label="Most improved pilots">
-          <div class="sec-head"><h2>Most improved</h2><span>seconds gained</span></div>
-          <table class="stbl"><thead><tr><th>Pilot</th><th class="num">New bests</th><th class="num">Gained</th></tr></thead><tbody>
-            ${d.improved.map((p) => `<tr><td>${esc(p.pilot)}<small>Team ${esc(p.team)} · ${secs(p.first)} → ${secs(p.best)}</small></td><td class="num">${p.pbs}</td><td class="num">−${secs(p.gained, 1)}s</td></tr>`).join("")}
-          </tbody></table>
-        </section>
-        <section class="chart-card" aria-label="Biggest single drops">
-          <div class="sec-head"><h2>Biggest single drops</h2><span>one new best</span></div>
-          <table class="stbl"><thead><tr><th>Pilot</th><th class="num">Drop</th></tr></thead><tbody>
-            ${d.drops.map((x) => `<tr><td>${esc(x.pilot)}<small>Team ${esc(x.team)} · ${esc(etTime.format(new Date(x.at)))} · ${secs(x.prev)} → ${secs(x.time)}</small></td><td class="num">−${secs(x.drop, 1)}s</td></tr>`).join("")}
-          </tbody></table>
-        </section>
-      </div>
 
       <section class="chart-card" aria-label="When pilots improved">
         <div class="sec-head"><h2>When pilots improved</h2><span>new bests and first times, Eastern time</span></div>
         <div id="heat"></div>
+      </section>
+
+      <section class="chart-card" aria-label="Biggest grinders">
+        <div class="sec-head"><h2>Biggest grinders</h2><span>most new personal bests</span></div>
+        <table class="stbl"><thead><tr><th class="num">#</th><th>Pilot</th><th class="num">New bests</th><th class="num">First → best</th></tr></thead><tbody>
+          ${d.grinders.map((p, i) => `<tr><td class="num">${i + 1}</td><td>${esc(p.pilot)}<small>Team ${esc(p.team)}</small></td><td class="num">${p.pbs}</td><td class="num">${secs(p.first)} → ${secs(p.best)}</td></tr>`).join("")}
+        </tbody></table>
       </section>`;
 
-    drawTeamChart(d, colorOf);
+    drawTeamChart(d, looks, swatch);
     drawHeat(d.activity);
   }
 
-  function drawTeamChart(d, colorOf) {
+  function drawTeamChart(d, looks, swatch) {
     const box = $("teamChart");
     if (!box) return;
-    const W = Math.max(320, box.clientWidth || 800), H = W < 520 ? 240 : 300;
-    const m = { l: 44, r: W < 520 ? 12 : 128, t: 10, b: 26 };
+    const W = Math.max(320, box.clientWidth || 800), H = W < 520 ? 260 : 340;
+    const m = { l: 44, r: W < 520 ? 12 : 132, t: 10, b: 26 };
     const teams = d.teams.map((t) => ({ ...t, pts: t.series.filter((p) => p[2] >= t.size).map(([at, total]) => [Date.parse(at), total]) }));
     const all = teams.flatMap((t) => t.pts);
     if (!all.length) { box.innerHTML = `<p class="sub">No team has all five pilots posted yet.</p>`; return; }
@@ -417,22 +393,31 @@
     const yTicks = []; for (let v = y0; v <= y1 + 1e-9; v += step) yTicks.push(v);
     const days = []; for (const t of times) { const k = etParts(new Date(t).toISOString()).day; if (!days.length || days[days.length - 1].k !== k) days.push({ k, t }); }
     const path = (pts) => pts.map((p, i) => `${i ? "L" : "M"}${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join("");
-    const order = [...teams].sort((a, b) => (colorOf.has(a.sponsor) ? 1 : 0) - (colorOf.has(b.sponsor) ? 1 : 0));
-    const ends = teams.filter((t) => colorOf.has(t.sponsor) && t.pts.length).map((t) => ({ t, y: Y(t.pts[t.pts.length - 1][1]) })).sort((a, b) => a.y - b.y);
-    for (let i = 1; i < ends.length; i++) ends[i].y = Math.max(ends[i].y, ends[i - 1].y + 14); // keep end labels apart
+    // End labels for every team, nudged apart so none overlap.
+    const ends = teams.filter((t) => t.pts.length).map((t) => ({ t, y: Y(t.pts[t.pts.length - 1][1]) })).sort((a, b) => a.y - b.y);
+    for (let i = 1; i < ends.length; i++) ends[i].y = Math.max(ends[i].y, ends[i - 1].y + 13);
     box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Team combined times over the week">
       ${yTicks.map((v) => `<line class="grid" x1="${m.l}" x2="${W - m.r}" y1="${Y(v)}" y2="${Y(v)}"/><text x="${m.l - 6}" y="${Y(v) + 4}" text-anchor="end">${v}</text>`).join("")}
       ${days.filter((dd, i) => !(i === 0 && days[1] && X(days[1].t) - X(dd.t) < 48)).map((dd) => `<line class="grid" x1="${X(dd.t)}" x2="${X(dd.t)}" y1="${m.t}" y2="${H - m.b}" opacity=".5"/><text x="${X(dd.t) + 3}" y="${H - 8}">${esc(etDay.format(new Date(dd.t)).replace(/,.*$/, ""))} ${new Date(dd.t).toLocaleDateString("en-US", { timeZone: ET, day: "numeric" })}</text>`).join("")}
-      ${order.map((t) => `<path class="tline${colorOf.has(t.sponsor) ? " top" : ""}" data-team="${esc(t.sponsor)}" d="${path(t.pts)}" stroke="${colorOf.get(t.sponsor) || "var(--s-other)"}"/>`).join("")}
-      ${W >= 520 ? ends.map((e) => `<text class="lbl" x="${W - m.r + 8}" y="${e.y + 4}">${esc(e.t.sponsor)}</text>`).join("") : ""}
+      ${teams.map((t) => { const l = looks.get(t.sponsor); return `<path class="tline" data-team="${esc(t.sponsor)}" d="${path(t.pts)}" stroke="${l.color}"${l.dash ? ` stroke-dasharray="6 4"` : ""}/>`; }).join("")}
+      ${W >= 520 ? ends.map((e) => `<text class="lbl" data-team="${esc(e.t.sponsor)}" x="${W - m.r + 8}" y="${e.y + 4}">${esc(e.t.sponsor)}</text>`).join("") : ""}
       <line class="xhair" id="xhair" x1="0" x2="0" y1="${m.t}" y2="${H - m.b}" visibility="hidden"/>
       <rect id="hit" x="${m.l}" y="${m.t}" width="${W - m.l - m.r}" height="${H - m.t - m.b}" fill="transparent"/>
     </svg><div class="tip" id="tip" hidden></div>`;
 
     const svg = box.querySelector("svg"), hit = box.querySelector("#hit"), xh = box.querySelector("#xhair"), tip = box.querySelector("#tip");
-    const lines = [...box.querySelectorAll(".tline")];
-    const highlight = (team) => lines.forEach((l) => { l.classList.toggle("hot", l.dataset.team === team); l.classList.toggle("dim", !!team && l.dataset.team !== team); });
-    lines.forEach((l) => { l.addEventListener("mouseenter", () => highlight(l.dataset.team)); l.addEventListener("mouseleave", () => highlight(null)); });
+    const lines = [...box.querySelectorAll(".tline"), ...box.querySelectorAll(".lbl")];
+    const keys = [...$("viewStats").querySelectorAll(".legend button")];
+    const highlight = (team) => {
+      lines.forEach((l) => { l.classList.toggle("hot", l.dataset.team === team); l.classList.toggle("dim", !!team && l.dataset.team !== team); });
+      keys.forEach((k) => k.classList.toggle("dim", !!team && k.dataset.team !== team));
+    };
+    let pinned = null;
+    keys.forEach((k) => {
+      k.addEventListener("mouseenter", () => highlight(k.dataset.team));
+      k.addEventListener("mouseleave", () => highlight(pinned));
+      k.addEventListener("click", () => { pinned = pinned === k.dataset.team ? null : k.dataset.team; highlight(pinned); });
+    });
     const move = (clientX, clientY) => {
       const r = svg.getBoundingClientRect();
       const px = ((clientX - r.left) / r.width) * W;
@@ -440,9 +425,10 @@
       const at = times.reduce((best, v) => (Math.abs(v - t) < Math.abs(best - t) ? v : best), times[0]);
       xh.setAttribute("x1", X(at)); xh.setAttribute("x2", X(at)); xh.setAttribute("visibility", "visible");
       const rows = d.teams.map((tm) => { const p = tm.series.find((q) => Date.parse(q[0]) === at); return p && { s: tm.sponsor, total: p[1], posted: p[2], size: tm.size }; }).filter(Boolean).sort((a, b) => a.total - b.total);
-      const near = rows.reduce((b, r2) => (Math.abs(Y(r2.total) - ((clientY - r.top) / r.height) * H) < Math.abs(Y(b.total) - ((clientY - r.top) / r.height) * H) ? r2 : b), rows[0]);
-      highlight(near?.s);
-      tip.innerHTML = `<b>${esc(etTime.format(new Date(at)))}</b>` + rows.map((r2) => `<div class="${r2.s === near?.s ? "hot" : ""}"><span><i style="background:${colorOf.get(r2.s) || "var(--s-other)"}"></i>${esc(r2.s)}</span><span>${r2.posted < r2.size ? `${r2.posted}/${r2.size}` : secs(r2.total)}</span></div>`).join("");
+      const py = ((clientY - r.top) / r.height) * H;
+      const near = pinned ? rows.find((r2) => r2.s === pinned) : rows.filter((r2) => r2.posted >= r2.size).reduce((b, r2) => (!b || Math.abs(Y(r2.total) - py) < Math.abs(Y(b.total) - py) ? r2 : b), null);
+      highlight(near?.s ?? pinned);
+      tip.innerHTML = `<b>${esc(etTime.format(new Date(at)))}</b>` + rows.map((r2) => `<div class="${r2.s === near?.s ? "hot" : ""}"><span>${swatch(r2.s)}${esc(r2.s)}</span><span>${r2.posted < r2.size ? `${r2.posted}/${r2.size} posted` : secs(r2.total)}</span></div>`).join("");
       tip.hidden = false;
       // Sit beside the crosshair on whichever side has room, always inside the chart.
       const bx = box.getBoundingClientRect();
@@ -453,7 +439,7 @@
     };
     hit.addEventListener("mousemove", (e) => move(e.clientX, e.clientY));
     hit.addEventListener("touchstart", (e) => { const tt = e.touches[0]; move(tt.clientX, tt.clientY); }, { passive: true });
-    hit.addEventListener("mouseleave", () => { tip.hidden = true; xh.setAttribute("visibility", "hidden"); highlight(null); });
+    hit.addEventListener("mouseleave", () => { tip.hidden = true; xh.setAttribute("visibility", "hidden"); highlight(pinned); });
   }
 
   function drawHeat(activity) {

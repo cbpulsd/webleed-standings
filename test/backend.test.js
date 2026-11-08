@@ -615,7 +615,7 @@ test("each refresh records first times and new personal bests on the required qu
   assert.deepEqual(diffEvents([{ name: "A", time: 50, rank: 1 }], [{ name: "A", time: 50.0004, rank: 1 }], "t"), [], "no event without a faster time");
 });
 
-test("stats: team totals over time, time cut, lead changes, most improved, biggest drops", async () => {
+test("stats: team totals over time, new bests, biggest grinders", async () => {
   const env = { STANDINGS: new MemoryKV() };
   const site = fakeSite([]);
   const five = (team) => [team.captain, ...team.pilots];
@@ -624,20 +624,16 @@ test("stats: team totals over time, time cut, lead changes, most improved, bigge
   site.rows = board(80, 70);
   await runSchedule(env, LOCK - 3 * HOUR + 60_000, { fetchImpl: site.fetch, retryDelayMs: 0 }); // 9 PM
   site.rows = board(60, 70);
-  await runSchedule(env, LOCK - 2 * HOUR + 60_000, { fetchImpl: site.fetch, retryDelayMs: 0 }); // 10 PM: EMAX takes the lead
+  await runSchedule(env, LOCK - 2 * HOUR + 60_000, { fetchImpl: site.fetch, retryDelayMs: 0 }); // 10 PM
   const st = await get(env, "/api/tracks/1/stats", LOCK - HOUR, {});
   const e = st.teams.find((t) => t.sponsor === "EMAX USA");
-  assert.equal(e.series.length, 2);
-  assert.equal(e.startTotal, 410);
+  assert.equal(st.teams.length, TEAMS.length, "every team has a line");
+  assert.deepEqual(e.series.map((p) => p[1]), [410, 310]);
   assert.equal(e.finalTotal, 310);
-  assert.equal(e.cut, 100);
-  assert.equal(e.bestHour.drop, 100);
-  assert.equal(st.teams.find((t) => t.sponsor === "BETAFPV").cut, null, "teams never at 5/5 have no cut");
-  assert.deepEqual(st.leadChanges.map((l) => [l.from, l.to]), [["WREKD", "EMAX USA"]]);
   assert.equal(st.summary.newBests, 5);
-  assert.equal(st.improved[0].team, "EMAX USA");
-  assert.equal(st.improved[0].gained, 20);
-  assert.equal(st.drops[0].drop, 20);
+  assert.equal(st.grinders.length, 5);
+  assert.equal(st.grinders[0].team, "EMAX USA");
+  assert.equal(st.grinders[0].pbs, 1);
   assert.equal(st.activity.length, 5, "the first save has nothing to compare with, so only the 10 PM bests count");
 });
 
