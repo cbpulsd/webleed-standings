@@ -366,8 +366,8 @@
 
       <section class="chart-card" aria-label="Biggest grinders">
         <div class="sec-head"><h2>Biggest grinders</h2><span>most new personal bests</span></div>
-        <table class="stbl"><thead><tr><th class="num">#</th><th>Pilot</th><th class="num">New bests</th><th class="num">First → best</th></tr></thead><tbody>
-          ${d.grinders.map((p, i) => `<tr><td class="num">${i + 1}</td><td>${esc(p.pilot)}<small>Team ${esc(p.team)}</small></td><td class="num">${p.pbs}</td><td class="num">${secs(p.first)} → ${secs(p.best)}</td></tr>`).join("")}
+        <table class="stbl"><thead><tr><th class="num">#</th><th>Pilot</th><th class="num">PBs</th><th class="num">Best</th></tr></thead><tbody>
+          ${d.grinders.map((p, i) => `<tr><td class="num">${i + 1}</td><td>${esc(p.pilot)}<small>Team ${esc(p.team)}</small></td><td class="num">${p.pbs}</td><td class="num">${secs(p.best)}<small>from ${secs(p.first)}</small></td></tr>`).join("")}
         </tbody></table>
       </section>`;
 

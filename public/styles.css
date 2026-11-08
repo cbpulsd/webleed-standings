@@ -67,10 +67,12 @@ h1{font-family:var(--display);font-weight:700;font-size:clamp(28px,6vw,40px);lin
 .status .meta b{color:var(--ink);font-weight:500}
 
 /* View switch */
-.views{display:flex;gap:4px;border-bottom:1px solid var(--line)}
-.views button{border:none;border-bottom:2px solid transparent;background:transparent;padding:8px 12px;font:600 15px var(--display);letter-spacing:.03em;color:var(--muted);cursor:pointer}
+.views{display:flex;gap:4px;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+.views::-webkit-scrollbar{display:none}
+.views button{flex:none;white-space:nowrap;border:none;border-bottom:2px solid transparent;background:transparent;padding:8px 12px;font:600 15px var(--display);letter-spacing:.03em;color:var(--muted);cursor:pointer}
 .views button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
-.views button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.views button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+@media (max-width:420px){.views button{padding:8px 9px;font-size:14px}}
 
 /* Teams */
 .teams{display:flex;flex-direction:column;gap:12px}
@@ -253,3 +255,4 @@ footer{color:var(--muted);font-size:12.5px;display:flex;flex-direction:column;ga
   .overall th,.overall td{padding:8px 8px}
 }
 @media (prefers-reduced-motion: reduce){.status[data-state="busy"] .dot{animation:none}.save-state[data-state="busy"]::before{animation:none}.fold>summary h2::before{transition:none}}
+@media (max-width:420px){.stbl th,.stbl td{padding:6px 5px}}

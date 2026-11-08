@@ -22,7 +22,7 @@ const SCENARIOS = {
   live: { label: "Live now", at: () => Math.min(Date.now(), LOCK - 30 * HOUR - 17 * 60_000) },
   closing: { label: "Sat 11:20 PM, just before lock", at: () => LOCK - 39 * 60_000 },
   final: { label: "After the lock (final)", at: () => LOCK + 26 * HOUR },
-  stats: { label: "Stats (real Track 1 week)", at: () => LOCK + 26 * HOUR, view: "stats", note: "Stats tab with the real Track 1 week: hourly team totals and every new best from Nov 2 to the lock." },
+  stats: { label: "Smash Stats (real Track 1 week)", at: () => LOCK + 26 * HOUR, view: "stats", note: "Smash Stats tab with the real Track 1 week: hourly team totals and every new best from Nov 2 to the lock." },
   race: { label: "Race day example", at: () => LOCK + 15 * HOUR, view: "races", note: "Made-up lineups and race times, to show how the Races tab fills in. Use the Race director button at the bottom of the Races tab to try editing (password: webleedadmin). Edits stay in this preview." },
 };
 
