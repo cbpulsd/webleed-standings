@@ -579,3 +579,20 @@ test("every edit is pushed to open pages right away", async () => {
   const kv = await route(new Request("https://x.dev/api/tracks/1/races/live"), new URL("https://x.dev/api/tracks/1/races/live"), { STANDINGS: new MemoryKV() }, ctx(), LOCK, {});
   assert.equal(kv.status, 501);
 });
+
+
+test("a lock run up to 60 s late still fetches; later, it uses the 11:58 PM refresh", async () => {
+  for (const [lateBy, expectTime, method] of [[44_000, 60, "final-fetch"], [90_000, 65, "last-before-deadline"]]) {
+    const env = { STANDINGS: new MemoryKV() };
+    const site = fakeSite([[1, "70.000", "TMAD"]]);
+    await runSchedule(env, LOCK - 4 * 60_000, { fetchImpl: site.fetch, retryDelayMs: 0 }); // 11:55
+    site.rows = [[1, "65.000", "TMAD"]];
+    await runSchedule(env, LOCK - 60_000 + 30_000, { fetchImpl: site.fetch, retryDelayMs: 0 }); // 11:58 run, 30 s late
+    site.rows = [[1, "60.000", "TMAD"]]; // posted around the deadline
+    const r = await runSchedule(env, LOCK + lateBy, { fetchImpl: site.fetch, retryDelayMs: 0 });
+    assert.equal(r[0].action, "locked");
+    assert.equal(r[0].record.lockMethod, method);
+    const tmad = r[0].record.standings.teams.find((t) => t.sponsor === "Velocidrone").pilots.find((p) => p.captain);
+    assert.equal(tmad.time, expectTime);
+  }
+});
