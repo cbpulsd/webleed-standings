@@ -52,7 +52,8 @@ export async function syncTrack(env, track, now, { force = false, staleMs = 0, f
   const current = await getRecord(env, track.id);
   if (current?.status === "locked") return { action: "skip-locked", record: current };
   await putRecord(env, track.id, next);
-  await appendHistory(env, track.id, compactSnapshot(standingsFor(track, rows), fetchedAt));
+  // History keeps one snapshot an hour (the run on the hour), to stay well under KV's daily write limit.
+  if (new Date(now).getUTCMinutes() === 0) await appendHistory(env, track.id, compactSnapshot(standingsFor(track, rows), fetchedAt));
   return { action: "refreshed", record: next };
 }
 

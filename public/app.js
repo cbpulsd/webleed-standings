@@ -3,7 +3,7 @@
   const api = (path, init = {}) => (window.STANDINGS_FETCH || fetch)("/api" + path, { cache: "no-store", ...init });
   const now = () => (window.STANDINGS_NOW ? window.STANDINGS_NOW() : Date.now());
   const NO_TIME = 999.99;
-  const POLL_AFTER_HOUR_MS = 90_000; // check for the new hourly data 90 s after the hour
+  const POLL_AFTER_HOUR_MS = 60_000; // check for new data a minute after each scheduled refresh
   const RETRY_MS = 5 * 60_000;
 
   const $ = (id) => document.getElementById(id);

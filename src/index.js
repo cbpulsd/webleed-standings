@@ -17,7 +17,7 @@
 //
 // The page in /public is served as static files and only reads from /api.
 
-import { ADMIN_PASSWORD_SHA256, ALIASES, LATE_LOCK_AFTER_MINUTES, RACES, LEAGUE, TEAMS, NO_VISIT_REFRESH_BEFORE_LOCK_MINUTES, SEASON, STALE_MINUTES, TRACKS } from "./config.js";
+import { ADMIN_PASSWORD_SHA256, ALIASES, LATE_LOCK_AFTER_MINUTES, RACES, REFRESH_MINUTES, LEAGUE, TEAMS, NO_VISIT_REFRESH_BEFORE_LOCK_MINUTES, SEASON, STALE_MINUTES, TRACKS } from "./config.js";
 import { computeStandings, norm, quadAllowed } from "./standings.js";
 import { computeRaces } from "./races.js";
 import { raceStore } from "./racestore.js";
@@ -329,9 +329,10 @@ function detail(track, record, now) {
   };
 }
 
-// The next top of the hour, or the lock time if that comes first.
+// The next scheduled refresh (every REFRESH_MINUTES), or the lock time if that comes first.
 function nextHour(now, lockAt) {
-  const t = Math.min(Math.floor(now / 3_600_000) * 3_600_000 + 3_600_000, lockAt);
+  const step = REFRESH_MINUTES * 60_000;
+  const t = Math.min(Math.floor(now / step) * step + step, lockAt);
   return new Date(t).toISOString();
 }
 

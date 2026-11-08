@@ -72,10 +72,10 @@ test("hourly runs refresh, then lock exactly at the deadline, then never fetch a
   const site = fakeSite([[1, "70.000", "TMAD"]]);
   const deps = { fetchImpl: site.fetch, retryDelayMs: 0 };
 
-  let r = await runSchedule(env, LOCK - 2 * HOUR, deps);
+  let r = await runSchedule(env, LOCK - 2 * HOUR + 60_000, deps); // 10:00 PM: on the hour, so history too
   assert.equal(r[0].action, "refreshed");
   site.rows = [[1, "68.000", "TMAD"]];
-  r = await runSchedule(env, LOCK - HOUR, deps);
+  r = await runSchedule(env, LOCK - HOUR + 60_000, deps); // 11:00 PM
   assert.equal(r[0].action, "refreshed");
 
   site.rows = [[1, "66.000", "TMAD"]]; // last time before the deadline
@@ -186,7 +186,7 @@ test("live track: roster fixes apply right away; stale data refreshes in the bac
   assert.equal(site.calls, 1);
   assert.ok(first.nextUpdateAt);
 
-  await get(env, "/api/tracks/1", now + 30 * 60_000, deps);
+  await get(env, "/api/tracks/1", now + 5 * 60_000, deps);
   assert.equal(site.calls, 1, "fresh data is served without fetching");
 
   const c = ctx();
@@ -216,11 +216,26 @@ test("admin routes need the token", async () => {
   assert.equal((await ok.json()).action, "refreshed");
 });
 
-test("a week of hourly runs stays far under the free plan's 1,000 writes a day", async () => {
+test("a day of 5-minute refreshes stays well under the free plan's 1,000 writes a day", async () => {
   const env = { STANDINGS: new MemoryKV() };
   const site = fakeSite([[1, "70.000", "TMAD"]]);
-  for (let h = 24; h > 0; h--) await runSchedule(env, LOCK - h * HOUR, { fetchImpl: site.fetch, retryDelayMs: 0 });
-  assert.equal(env.STANDINGS.writes, 48); // record + history, once an hour
+  const dayStart = LOCK - 29 * HOUR + 60_000; // midnight UTC the day before the lock
+  for (let m = 0; m < 24 * 60; m += 5) await runSchedule(env, dayStart + m * 60_000, { fetchImpl: site.fetch, retryDelayMs: 0 });
+  assert.equal(site.calls, 288, "288 refreshes");
+  assert.equal(env.STANDINGS.writes, 288 + 24, "record every 5 minutes, history once an hour");
+  assert.equal((await env.STANDINGS.get("history:1", "json")).length, 24);
+});
+
+test("the page is told the next refresh is within 5 minutes, and never past the lock", async () => {
+  const env = { STANDINGS: new MemoryKV() };
+  const site = fakeSite([[1, "70.000", "TMAD"]]);
+  const t = LOCK - 3 * HOUR + 60_000 + 7 * 60_000; // 9:07 PM
+  await runSchedule(env, t - 2 * 60_000, { fetchImpl: site.fetch, retryDelayMs: 0 });
+  const body = await get(env, "/api/tracks/1", t, {});
+  assert.equal(Date.parse(body.nextUpdateAt) - t, 3 * 60_000, "9:10 PM");
+  const late = await get(env, "/api/tracks/1", LOCK - 2 * 60_000, {}); // 11:57 PM
+  assert.equal(body.track.locksAt, late.track.locksAt);
+  assert.equal(Date.parse(late.nextUpdateAt), LOCK, "11:59 PM, not midnight");
 });
 
 test("old page's /data route still answers from saved times", async () => {

@@ -15,12 +15,10 @@
   ],
 
   // Times are UTC.
-  //   "0 * * * *"   every hour on the hour: refresh live tracks
-  //   "50 4 * * SUN"  Saturday 11:50 PM Eastern (EST, UTC-5): last refresh before the deadline,
-  //                   so a lock that can't fetch falls back to times at most 9 minutes old
+  //   "*/5 * * * *" every 5 minutes: refresh live tracks (also covers Saturday 11:50 and 11:55 PM)
   //   "59 4 * * SUN"  Saturday 11:59 PM Eastern: lock tracks whose deadline it is
   // Cloudflare numbers weekdays 1-7 with Sunday = 1 (not 0), so use day names.
-  "triggers": { "crons": ["0 * * * *", "50 4 * * SUN", "59 4 * * SUN"] },
+  "triggers": { "crons": ["*/5 * * * *", "59 4 * * SUN"] },
 
   // Race day: one RaceRoom per track holds lineups and race times and pushes live updates.
   "durable_objects": { "bindings": [{ "name": "RACES_DO", "class_name": "RaceRoom" }] },

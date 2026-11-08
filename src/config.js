@@ -6,9 +6,11 @@ export const SEASON = "Season 5";
 // A pilot with no posted time counts as this many seconds.
 export const NO_TIME = 999.99;
 
-// If the hourly timer is missed, a visit to a live track refreshes data older than this.
+// Live tracks refresh every REFRESH_MINUTES (the timer in wrangler.jsonc must match).
+// If the timer is missed, a visit to a live track refreshes data older than STALE_MINUTES.
 // Visits never refresh in the last few minutes before a lock time.
-export const STALE_MINUTES = 65;
+export const REFRESH_MINUTES = 5;
+export const STALE_MINUTES = 12;
 export const NO_VISIT_REFRESH_BEFORE_LOCK_MINUTES = 5;
 
 // Only the lock timer may fetch a track's final times, and only within this many seconds
