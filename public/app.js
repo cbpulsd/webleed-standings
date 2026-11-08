@@ -364,6 +364,25 @@
         <div id="heat"></div>
       </section>
 
+      ${d.depth?.length ? `<section class="chart-card depth" aria-label="Team depth">
+        <div class="sec-head"><h2>Team depth</h2><span>each pilot's time, by tier</span></div>
+        <div class="tier-key">${d.depth[0].pilots.map((_, i) => `<span><i style="background:var(--t${i + 1})"></i>Tier ${i + 1}</span>`).join("")}<span>Spread = slowest − fastest, in seconds</span></div>
+        <div class="chart-box" id="depthChart"></div>
+        <p class="sub">A pilot's tier is their place on their own team by time${d.tiersAt ? ` at ${esc(etTime.format(new Date(d.tiersAt)))}` : ""}: the team's fastest is Tier 1. A tight spread means a deep team; a wide one means the team leans on its top pilots.</p>
+      </section>
+
+      <section class="chart-card" aria-label="By tier">
+        <div class="sec-head"><h2>By tier</h2><span>fastest, and biggest carry this week</span></div>
+        <div class="tier-grid">${d.tiers.map((t) => `<div class="tier-card">
+          <h3><i style="background:var(--t${t.tier})"></i>Tier ${t.tier}</h3>
+          <h4>Fastest</h4>
+          <ol>${t.fastest.map((p, i) => `<li><span>${i + 1}. ${esc(p.pilot)}<small>${esc(p.team)}</small></span><b>${secs(p.time)}</b></li>`).join("") || "<li>No times yet</li>"}</ol>
+          <h4>Biggest carry</h4>
+          <ol>${t.carry.map((p) => `<li title="${secs(p.first)} → ${secs(p.best)}"><span>${esc(p.pilot)}<small>${esc(p.team)}</small></span><b>−${secs(p.gained, 1)}s</b></li>`).join("") || "<li>No improvement yet</li>"}</ol>
+        </div>`).join("")}</div>
+        <p class="sub">Biggest carry: seconds a pilot cut from their first time this week to their final time, which came straight off their team's total.</p>
+      </section>` : ""}
+
       <section class="chart-card" aria-label="Biggest grinders">
         <div class="sec-head"><h2>Biggest grinders</h2><span>most new personal bests</span></div>
         <table class="stbl"><thead><tr><th class="num">#</th><th>Pilot</th><th class="num">PBs</th><th class="num">Best</th></tr></thead><tbody>
@@ -372,6 +391,7 @@
       </section>`;
 
     drawTeamChart(d, looks, swatch);
+    drawDepth(d);
     drawHeat(d.activity);
   }
 
@@ -440,6 +460,47 @@
     hit.addEventListener("mousemove", (e) => move(e.clientX, e.clientY));
     hit.addEventListener("touchstart", (e) => { const tt = e.touches[0]; move(tt.clientX, tt.clientY); }, { passive: true });
     hit.addEventListener("mouseleave", () => { tip.hidden = true; xh.setAttribute("visibility", "hidden"); highlight(pinned); });
+  }
+
+  function drawDepth(d) {
+    const box = $("depthChart");
+    if (!box) return;
+    const W = Math.max(300, box.clientWidth || 800), narrow = W < 520;
+    const m = { l: narrow ? 92 : 150, r: narrow ? 44 : 64, t: 18, b: 24 }, rowH = 30;
+    const H = m.t + m.b + d.depth.length * rowH;
+    const all = d.depth.flatMap((t) => t.pilots.map((p) => p.time)).filter((v) => v != null);
+    const step = [2, 5, 10, 20].find((k) => (Math.max(...all) - Math.min(...all)) / k <= (narrow ? 4 : 7)) || 50;
+    const x0 = Math.floor(Math.min(...all) / step) * step, x1 = Math.ceil(Math.max(...all) / step) * step;
+    const X = (v) => m.l + ((v - x0) / Math.max(1, x1 - x0)) * (W - m.l - m.r);
+    const ticks = []; for (let v = x0; v <= x1 + 1e-9; v += step) ticks.push(v);
+    const short = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
+    box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Each team's pilot times by tier">
+      <text x="${W - m.r + 8}" y="11">Spread</text>
+      ${ticks.map((v) => `<line class="grid" x1="${X(v)}" x2="${X(v)}" y1="${m.t}" y2="${H - m.b}"/><text x="${X(v)}" y="${H - 6}" text-anchor="middle">${v}s</text>`).join("")}
+      ${d.depth.map((t, i) => {
+        const y = m.t + i * rowH + rowH / 2;
+        const ts = t.pilots.map((p) => p.time).filter((v) => v != null);
+        return `<text class="tn" x="${m.l - 10}" y="${y + 4}" text-anchor="end">${esc(short(t.sponsor, narrow ? 11 : 20))}</text>
+          ${ts.length > 1 ? `<line class="rng" x1="${X(Math.min(...ts))}" x2="${X(Math.max(...ts))}" y1="${y}" y2="${y}"/>` : ""}
+          ${[...t.pilots].reverse().map((p) => (p.time == null ? "" : `<circle class="dot" cx="${X(p.time)}" cy="${y}" r="6" fill="var(--t${p.tier})" data-tip="${esc(p.pilot)}|${esc(t.sponsor)}|${p.tier}|${secs(p.time)}"/>`)).join("")}
+          <text class="sp" x="${W - m.r + 8}" y="${y + 4}">${t.spread != null ? secs(t.spread, 1) : `${t.posted}/${t.size}`}</text>`;
+      }).join("")}
+    </svg><div class="tip" id="dtip" hidden></div>`;
+    const tip = box.querySelector("#dtip");
+    const show = (c) => {
+      const [pilot, team, tier, time] = c.dataset.tip.split("|");
+      tip.innerHTML = `<b>${pilot}</b><div><span>Team</span><span>${team}</span></div><div><span>Tier</span><span>${tier}</span></div><div><span>Time</span><span>${time}</span></div>`;
+      tip.hidden = false;
+      const bx = box.getBoundingClientRect(), r = c.getBoundingClientRect();
+      const cx = r.left + r.width / 2 - bx.left, wide = tip.offsetWidth;
+      tip.style.left = `${Math.max(0, Math.min(cx + 12 + wide <= bx.width ? cx + 12 : cx - wide - 12, bx.width - wide))}px`;
+      tip.style.top = `${Math.max(0, Math.min(r.top - bx.top - 8, bx.height - tip.offsetHeight))}px`;
+    };
+    box.querySelectorAll(".dot").forEach((c) => {
+      c.addEventListener("mouseenter", () => show(c));
+      c.addEventListener("click", () => show(c));
+      c.addEventListener("mouseleave", () => { tip.hidden = true; });
+    });
   }
 
   function drawHeat(activity) {
