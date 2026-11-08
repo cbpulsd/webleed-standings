@@ -19,7 +19,7 @@
 // The page in /public is served as static files and only reads from /api.
 
 import { ADMIN_PASSWORD_SHA256, ALIASES, LATE_LOCK_AFTER_MINUTES, RACES, REFRESH_MINUTES, LEAGUE, TEAMS, NO_VISIT_REFRESH_BEFORE_LOCK_MINUTES, SEASON, STALE_MINUTES, TRACKS } from "./config.js";
-import { computeStandings, norm, quadAllowed } from "./standings.js";
+import { applyOverrides, computeStandings, norm, quadAllowed } from "./standings.js";
 import { computeRaces } from "./races.js";
 import { raceStore } from "./racestore.js";
 export { RaceRoom } from "./raceroom.js";
@@ -28,7 +28,7 @@ import { trackIdFromUrl } from "./leaderboard.js";
 import { getEvents, getHistory, getRecord } from "./store.js";
 import { computeStats } from "./stats.js";
 import { seedFor } from "./seed/index.js";
-import { findTrack, lockTrack, lockTime, runSchedule, standingsFor, syncTrack, teamsFor, trackStatus } from "./sync.js";
+import { findTrack, lockTrack, lockTime, overridesFor, runSchedule, standingsFor, syncTrack, teamsFor, trackStatus } from "./sync.js";
 
 export default {
   async fetch(request, env, ctx) {
@@ -312,7 +312,7 @@ async function passwordOk(env, given) {
 async function racesFor(env, track, now) {
   const store = raceStore(env, track.id);
   const [docs, record] = await Promise.all([store.docs(), track.leaderboardUrl ? getRecord(env, track.id) : null]);
-  const standings = record ? (record.status === "locked" ? record.standings : standingsFor(track, record.rows)) : null;
+  const standings = record ? (record.status === "locked" ? applyOverrides(record.standings, overridesFor(track)) : standingsFor(track, record.rows)) : null;
   return { track: track.id, live: store.live, version: docs.version ?? null, ...computeRaces(track, docs, teamsFor(track), standings) };
 }
 
@@ -343,7 +343,8 @@ function summary(track, record, now) {
 function detail(track, record, now) {
   const base = summary(track, record, now);
   if (!record) return { track: base, standings: null };
-  const standings = record.status === "locked" ? record.standings : standingsFor(track, record.rows);
+  // A locked track's saved standings stay as they were; league-set times are applied on top.
+  const standings = record.status === "locked" ? applyOverrides(record.standings, overridesFor(track)) : standingsFor(track, record.rows);
   return {
     track: base,
     rowCount: record.rowCount,

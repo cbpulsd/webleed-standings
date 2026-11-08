@@ -662,3 +662,27 @@ test("stats: tiers within each team and draft spot vs this week", async () => {
   assert.ok(st.dropoffs.length && st.dropoffs.every((m, i, a) => m.moved < 0 && (i === 0 || a[i - 1].moved <= m.moved)));
   assert.ok(st.sandbaggers.every((m) => m.moved === m.draftPlace - m.weekPlace));
 });
+
+test("league-set time: AyyyKayyy's 72.980 replaces Velocidrone's slower listing everywhere", async () => {
+  const { applyOverrides, overrideSnapshot, computeStandings } = await import("../src/standings.js");
+  const { TIME_OVERRIDES, ALIASES } = await import("../src/config.js");
+  const fractal = TEAMS.find((t) => t.captain === "AyyyKayyy");
+  const rows = [fractal.captain, ...fractal.pilots].map((n, i) => ({ rank: i + 1, name: n, time: n === "AyyyKayyy" ? 76.095 : 80 + i, model: "Hummingbird RS" }));
+  const raw = computeStandings(rows, [fractal], ALIASES, TRACKS[0].quad);
+  const fixed = applyOverrides(raw, TIME_OVERRIDES[1]);
+  const ak = fixed.teams[0].pilots.find((p) => p.name === "AyyyKayyy");
+  assert.equal(ak.time, 72.98);
+  assert.equal(ak.override.listed, 76.095);
+  assert.equal(ak.lb, null);
+  assert.equal(fixed.teams[0].pilots[0].name, "AyyyKayyy", "fastest on the team again");
+  assert.equal(fixed.teams[0].total, Math.round((raw.teams[0].total - 3.115) * 1000) / 1000);
+  assert.deepEqual(applyOverrides(fixed, TIME_OVERRIDES[1]), fixed, "applying twice changes nothing");
+  // A faster real time would win over the override.
+  const faster = applyOverrides(computeStandings(rows.map((r) => (r.name === "AyyyKayyy" ? { ...r, time: 71 } : r)), [fractal], ALIASES, null), TIME_OVERRIDES[1]);
+  assert.equal(faster.teams[0].pilots[0].time, 71);
+  // Hourly saves from `since` on.
+  const o = { AyyyKayyy: { ...TIME_OVERRIDES[1].AyyyKayyy, team: "Fractal Engineering" } };
+  const snap = { at: "2026-11-08T03:00:00Z", teams: [["Fractal Engineering", 453.03, 5], ["WREKD", 400, 5]], pilots: { AyyyKayyy: 76.095 } };
+  assert.deepEqual(overrideSnapshot(snap, o).teams, [["Fractal Engineering", 449.915, 5], ["WREKD", 400, 5]]);
+  assert.equal(overrideSnapshot({ ...snap, at: "2026-11-03T20:00:00Z" }, o).pilots.AyyyKayyy, 76.095, "not before since");
+});

@@ -1,14 +1,15 @@
 // Keeps each track's saved record current, and freezes it at the track's lock time.
 
-import { ALIASES, FINAL_FETCH_WINDOW_SECONDS, TEAMS, TRACKS } from "./config.js";
+import { ALIASES, FINAL_FETCH_WINDOW_SECONDS, TEAMS, TIME_OVERRIDES, TRACKS } from "./config.js";
 import { fetchLeaderboard } from "./leaderboard.js";
-import { compactSnapshot, computeStandings, diffEvents } from "./standings.js";
+import { applyOverrides, compactSnapshot, computeStandings, diffEvents } from "./standings.js";
 import { appendEvents, appendHistory, getRecord, putRecord } from "./store.js";
 
 export const findTrack = (id) => TRACKS.find((t) => String(t.id) === String(id)) || null;
 export const teamsFor = (track) => track.teams || TEAMS;
 export const lockTime = (track) => (track.locksAt ? Date.parse(track.locksAt) : Infinity);
-export const standingsFor = (track, rows) => computeStandings(rows, teamsFor(track), ALIASES, track.quad || null);
+export const overridesFor = (track) => TIME_OVERRIDES[track.id] || null;
+export const standingsFor = (track, rows) => applyOverrides(computeStandings(rows, teamsFor(track), ALIASES, track.quad || null), overridesFor(track));
 
 // "upcoming": no leaderboard yet, tab grayed out
 // "live":     fetched every hour until its lock time

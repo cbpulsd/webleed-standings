@@ -189,8 +189,8 @@
         <table class="pilots"><tbody>
           ${t.pilots.map((p) => `<tr class="${p.posted ? "" : "notime"}">
             <td class="name">${esc(p.name)}${p.captain ? '<span class="cap">Capt</span>' : ""}</td>
-            <td class="lb">${p.lb ? "LB #" + p.lb : ""}</td>
-            <td class="time">${p.posted ? fmt(p.time) : NO_TIME.toFixed(2)}</td>
+            <td class="lb">${p.override ? "set by league" : p.lb ? "LB #" + p.lb : ""}</td>
+            <td class="time">${p.posted ? fmt(p.time) + ovr(p) : NO_TIME.toFixed(2)}</td>
           </tr>`).join("")}
         </tbody></table>
       </article>`)
@@ -204,7 +204,7 @@
         <td>${esc(p.name)}${p.captain ? '<span class="cap">Capt</span>' : ""}</td>
         <td class="muted">${esc(p.team)}</td>
         <td class="num muted">${p.lb ? "#" + p.lb : ""}</td>
-        <td class="num">${p.posted ? fmt(p.time) : NO_TIME.toFixed(2)}</td>
+        <td class="num">${p.posted ? fmt(p.time) + ovr(p) : NO_TIME.toFixed(2)}</td>
       </tr>`)
       .join("");
   }
@@ -229,6 +229,8 @@
   $("viewStatsBtn").addEventListener("click", () => showView("stats"));
 
   // ---------- races ----------
+  // League-set time: a marker whose tooltip says what Velocidrone lists and why.
+  const ovr = (p) => (p.override ? `<sup class="ovr" tabindex="0" title="${esc(p.override.note)}${p.override.listed != null ? ` Velocidrone lists ${fmt(p.override.listed)}.` : ""}">*</sup>` : "");
   const ordinal = (n) => n + (n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] || "th");
   const raceDayFmt = new Intl.DateTimeFormat([], { weekday: "long", month: "short", day: "numeric" });
 

@@ -59,6 +59,46 @@ export function computeStandings(rows, teams, aliases = {}, quad = null) {
   return { teams: ranked };
 }
 
+// League-set times (see TIME_OVERRIDES): a pilot's time becomes the override when it
+// is faster than what Velocidrone lists, and team totals and order are worked out again.
+// Safe to apply more than once.
+export function applyOverrides(standings, overrides) {
+  if (!standings || !overrides || !Object.keys(overrides).length) return standings;
+  const teams = standings.teams
+    .map((t) => {
+      const pilots = t.pilots
+        .map((p) => {
+          const o = overrides[p.name];
+          if (!o || (p.posted && p.time <= o.time)) return p;
+          return { ...p, posted: true, time: o.time, lb: null, override: { listed: p.posted ? p.time : null, note: o.note || "" } };
+        })
+        .sort((a, b) => a.time - b.time || a.name.localeCompare(b.name));
+      return { ...t, pilots, total: round3(pilots.reduce((s, p) => s + p.time, 0)), posted: pilots.filter((p) => p.posted).length };
+    })
+    .sort((a, b) => a.total - b.total || b.posted - a.posted || a.sponsor.localeCompare(b.sponsor));
+  const lead = teams.length ? teams[0].total : 0;
+  return { ...standings, teams: teams.map((t, i) => ({ ...t, position: i + 1, gap: round3(t.total - lead) })) };
+}
+
+// The same for one hourly save, from the override's `since` on.
+export function overrideSnapshot(snap, overrides) {
+  if (!overrides) return snap;
+  let out = snap;
+  for (const [name, o] of Object.entries(overrides)) {
+    if (o.since && snap.at < o.since) continue;
+    const cur = out.pilots?.[name];
+    if (cur == null || cur <= o.time) continue;
+    const team = o.team;
+    const delta = cur - o.time;
+    out = {
+      ...out,
+      pilots: { ...out.pilots, [name]: o.time },
+      teams: (out.teams || []).map((r) => (r[0] === team ? [r[0], round3(r[1] - delta), r[2]] : r)),
+    };
+  }
+  return out;
+}
+
 // What changed between two saves of a board: a pilot's first time ("debut") or a
 // faster personal best ("pb"). Only times on the track's required quad count.
 // Event: { at, name, kind, prev, time, prevRank, rank, userId }

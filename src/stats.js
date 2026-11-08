@@ -1,14 +1,18 @@
 // Stats for one track, from its hourly history (team totals, rostered pilots' times)
 // and its events (every first time and new personal best).
 
-import { ALIASES } from "./config.js";
+import { ALIASES, TIME_OVERRIDES } from "./config.js";
 import { DRAFT_RANKS } from "./draft.js";
-import { norm } from "./standings.js";
+import { norm, overrideSnapshot } from "./standings.js";
 
 const round3 = (n) => Math.round(n * 1000) / 1000;
 
 export function computeStats(track, history, events, teams) {
-  history = [...(history || [])].sort((a, b) => a.at.localeCompare(b.at));
+  // League-set times (TIME_OVERRIDES) apply to the hourly saves too.
+  const overrides = Object.fromEntries(
+    Object.entries(TIME_OVERRIDES[track.id] || {}).map(([name, o]) => [name, { ...o, team: teams.find((t) => t.captain === name || t.pilots.includes(name))?.sponsor }])
+  );
+  history = [...(history || [])].sort((a, b) => a.at.localeCompare(b.at)).map((h) => overrideSnapshot(h, overrides));
   events = events || [];
 
   // Rostered pilots: Velocidrone name (matching form) -> { pilot, team }
