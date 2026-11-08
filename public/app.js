@@ -372,16 +372,18 @@
       </section>
 
       <section class="chart-card" aria-label="By tier">
-        <div class="sec-head"><h2>By tier</h2><span>fastest, and biggest carry this week</span></div>
+        <div class="sec-head"><h2>Top of each tier</h2><span>fastest three</span></div>
         <div class="tier-grid">${d.tiers.map((t) => `<div class="tier-card">
           <h3><i style="background:var(--t${t.tier})"></i>Tier ${t.tier}</h3>
-          <h4>Fastest</h4>
           <ol>${t.fastest.map((p, i) => `<li><span>${i + 1}. ${esc(p.pilot)}<small>${esc(p.team)}</small></span><b>${secs(p.time)}</b></li>`).join("") || "<li>No times yet</li>"}</ol>
-          <h4>Biggest carry</h4>
-          <ol>${t.carry.map((p) => `<li title="${secs(p.first)} → ${secs(p.best)}"><span>${esc(p.pilot)}<small>${esc(p.team)}</small></span><b>−${secs(p.gained, 1)}s</b></li>`).join("") || "<li>No improvement yet</li>"}</ol>
         </div>`).join("")}</div>
-        <p class="sub">Biggest carry: seconds a pilot cut from their first time this week to their final time, which came straight off their team's total.</p>
-      </section>` : ""}
+      </section>
+
+      <div class="two-col">
+        ${moveList("Biggest sandbaggers", "faster than their draft spot", d.sandbaggers, d.leaguePilots, "up")}
+        ${moveList("Biggest dropoff", "slower than their draft spot", d.dropoffs, d.leaguePilots, "down")}
+      </div>
+      <p class="sub">Draft spot is a pilot's place among the ${d.leaguePilots} league pilots by tryout rank going into the draft; this week is their place among the same pilots by time on this track. Pilots without a time aren't placed.</p>` : ""}
 
       <section class="chart-card" aria-label="Biggest grinders">
         <div class="sec-head"><h2>Biggest grinders</h2><span>most new personal bests</span></div>
@@ -460,6 +462,15 @@
     hit.addEventListener("mousemove", (e) => move(e.clientX, e.clientY));
     hit.addEventListener("touchstart", (e) => { const tt = e.touches[0]; move(tt.clientX, tt.clientY); }, { passive: true });
     hit.addEventListener("mouseleave", () => { tip.hidden = true; xh.setAttribute("visibility", "hidden"); highlight(pinned); });
+  }
+
+  function moveList(title, sub, list, of, dir) {
+    return `<section class="chart-card" aria-label="${esc(title)}">
+      <div class="sec-head"><h2>${esc(title)}</h2><span>${esc(sub)}</span></div>
+      <table class="stbl"><thead><tr><th>Pilot</th><th class="num">Draft → now</th><th class="num">Moved</th></tr></thead><tbody>
+        ${list.map((m) => `<tr><td>${esc(m.pilot)}<small>Team ${esc(m.team)} · tryout #${m.draftRank}</small></td><td class="num">${ordinal(m.draftPlace)} → ${ordinal(m.weekPlace)}<small>${secs(m.time)}</small></td><td class="num mv ${dir}">${dir === "up" ? "▲" : "▼"} ${Math.abs(m.moved)}</td></tr>`).join("") || `<tr><td colspan="3">Nobody yet</td></tr>`}
+      </tbody></table>
+    </section>`;
   }
 
   function drawDepth(d) {

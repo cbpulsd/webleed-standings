@@ -2,6 +2,7 @@
 // and its events (every first time and new personal best).
 
 import { ALIASES } from "./config.js";
+import { DRAFT_RANKS } from "./draft.js";
 import { norm } from "./standings.js";
 
 const round3 = (n) => Math.round(n * 1000) / 1000;
@@ -75,13 +76,19 @@ export function computeStats(track, history, events, teams) {
     const tier = i + 1;
     const inTier = placed.map((t) => ({ ...t.pilots[i], team: t.sponsor })).filter((p) => p && p.pilot);
     const fastest = inTier.filter((p) => p.time != null).sort((a, b) => a.time - b.time).slice(0, 3);
-    const carry = inTier
-      .map((p) => { const b = byPilot.get(p.pilot); return b && b.first != null && p.time != null ? { pilot: p.pilot, team: p.team, first: b.first, best: p.time, gained: round3(b.first - p.time) } : null; })
-      .filter((p) => p && p.gained > 0)
-      .sort((a, b) => b.gained - a.gained)
-      .slice(0, 3);
-    return { tier, fastest, carry };
+    return { tier, fastest };
   });
+
+  // Draft spot vs this week: both are places among the league's own pilots, so the
+  // draft's tryout ranks (#1 to #97, with gaps) line up with this week's times.
+  // Pilots without a time this week aren't placed.
+  const allPilots = placed.flatMap((t) => t.pilots.map((p) => ({ ...p, team: t.sponsor })));
+  const drafted = allPilots.filter((p) => DRAFT_RANKS[p.pilot] != null).sort((a, b) => DRAFT_RANKS[a.pilot] - DRAFT_RANKS[b.pilot]);
+  const draftPlace = new Map(drafted.map((p, i) => [p.pilot, i + 1]));
+  const timed = drafted.filter((p) => p.time != null).sort((a, b) => a.time - b.time);
+  const moves = timed.map((p, i) => ({ pilot: p.pilot, team: p.team, draftRank: DRAFT_RANKS[p.pilot], draftPlace: draftPlace.get(p.pilot), weekPlace: i + 1, time: p.time, moved: draftPlace.get(p.pilot) - (i + 1) }));
+  const sandbaggers = moves.filter((m) => m.moved > 0).sort((a, b) => b.moved - a.moved || a.weekPlace - b.weekPlace).slice(0, 8);
+  const dropoffs = moves.filter((m) => m.moved < 0).sort((a, b) => a.moved - b.moved || a.weekPlace - b.weekPlace).slice(0, 8);
 
   return {
     track: track.id,
@@ -93,6 +100,9 @@ export function computeStats(track, history, events, teams) {
     tiersAt: latest?.at || null,
     depth,
     tiers: tierStats,
+    leaguePilots: drafted.length,
+    sandbaggers,
+    dropoffs,
     // Every rostered pilot's first time or new best, for the activity heatmap.
     activity: league.map((e) => [e.at, e.kind === "pb" ? 1 : 0]),
   };

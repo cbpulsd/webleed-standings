@@ -650,3 +650,15 @@ test("stats include the repo-kept Track 1 data from before our history began, wi
   assert.ok(seed1.history.every((h) => h.at < "2026-11-03T22:22:29.151Z"));
   assert.equal((await route(new Request("https://x/api/admin/tracks/1/backfill", { method: "POST" }), new URL("https://x/api/admin/tracks/1/backfill"), env, { waitUntil() {} }, LOCK + HOUR)).status >= 400, true, "no import route");
 });
+
+test("stats: tiers within each team and draft spot vs this week", async () => {
+  const { computeStats } = await import("../src/stats.js");
+  const st = computeStats(TRACKS[0], seed1.history, seed1.events, TEAMS);
+  assert.equal(st.tiers.length, 5);
+  assert.ok(st.depth.every((t) => t.pilots.map((p) => p.tier).join() === "1,2,3,4,5"));
+  assert.ok(st.tiers[0].fastest[0].time <= st.tiers[0].fastest[1].time);
+  assert.equal(st.leaguePilots, 50);
+  assert.ok(st.sandbaggers.length && st.sandbaggers.every((m, i, a) => m.moved > 0 && (i === 0 || a[i - 1].moved >= m.moved)));
+  assert.ok(st.dropoffs.length && st.dropoffs.every((m, i, a) => m.moved < 0 && (i === 0 || a[i - 1].moved <= m.moved)));
+  assert.ok(st.sandbaggers.every((m) => m.moved === m.draftPlace - m.weekPlace));
+});
