@@ -87,8 +87,8 @@ export function computeStats(track, history, events, teams) {
   const draftPlace = new Map(drafted.map((p, i) => [p.pilot, i + 1]));
   const timed = drafted.filter((p) => p.time != null).sort((a, b) => a.time - b.time);
   const moves = timed.map((p, i) => ({ pilot: p.pilot, team: p.team, draftRank: DRAFT_RANKS[p.pilot], draftPlace: draftPlace.get(p.pilot), weekPlace: i + 1, time: p.time, moved: draftPlace.get(p.pilot) - (i + 1) }));
-  const sandbaggers = moves.filter((m) => m.moved > 0).sort((a, b) => b.moved - a.moved || a.weekPlace - b.weekPlace).slice(0, 8);
-  const dropoffs = moves.filter((m) => m.moved < 0).sort((a, b) => a.moved - b.moved || a.weekPlace - b.weekPlace).slice(0, 8);
+  const sandbaggers = moves.filter((m) => m.moved > 0).sort((a, b) => b.moved - a.moved || a.weekPlace - b.weekPlace).slice(0, 10);
+  const dropoffs = moves.filter((m) => m.moved < 0).sort((a, b) => a.moved - b.moved || a.weekPlace - b.weekPlace).slice(0, 10);
 
   return {
     track: track.id,
