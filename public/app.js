@@ -71,6 +71,7 @@
     state.current = id;
     state.data = null;
     state.races = null;
+    state.stats = null;
     try { history.replaceState(null, "", id === OVERALL ? "#overall" : "#track-" + id); } catch (e) {}
     renderTabs();
     renderHeader();
@@ -84,7 +85,7 @@
     document.querySelector(".views").hidden = o;
     $("viewOverall").hidden = !o;
     document.querySelector(".wrap").classList.toggle("wide", o);
-    if (o) { $("viewTeams").hidden = true; $("viewPilots").hidden = true; $("viewRaces").hidden = true; liveStop(); }
+    if (o) { $("viewTeams").hidden = true; $("viewPilots").hidden = true; $("viewRaces").hidden = true; $("viewStats").hidden = true; liveStop(); }
     else showView(state.view);
   }
 
@@ -213,6 +214,9 @@
     $("viewTeamsBtn").setAttribute("aria-selected", v === "teams");
     $("viewPilotsBtn").setAttribute("aria-selected", v === "pilots");
     $("viewRacesBtn").setAttribute("aria-selected", v === "races");
+    $("viewStatsBtn").setAttribute("aria-selected", v === "stats");
+    $("viewStats").hidden = v !== "stats";
+    if (v === "stats" && !isOverall()) loadStats();
     $("viewRaces").hidden = v !== "races";
     if (v === "races" && !isOverall()) { loadRaces(); liveStart(state.current, loadRaces); }
     else liveStop();
@@ -222,6 +226,7 @@
   $("viewTeamsBtn").addEventListener("click", () => showView("teams"));
   $("viewPilotsBtn").addEventListener("click", () => showView("pilots"));
   $("viewRacesBtn").addEventListener("click", () => showView("races"));
+  $("viewStatsBtn").addEventListener("click", () => showView("stats"));
 
   // ---------- races ----------
   const ordinal = (n) => n + (n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] || "th");
@@ -298,6 +303,184 @@
       ${tierTables}
       <div class="races-foot"><a class="btn" href="#admin-${d.track}">Race director: enter results</a></div>`;
   }
+
+  // ---------- stats ----------
+  const ET = "America/New_York";
+  const etTime = new Intl.DateTimeFormat([], { timeZone: ET, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  const etDay = new Intl.DateTimeFormat("en-US", { timeZone: ET, weekday: "short", month: "short", day: "numeric" });
+  const etParts = (iso) => {
+    const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: ET, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" }).formatToParts(new Date(iso)).map((x) => [x.type, x.value]));
+    return { day: `${p.year}-${p.month}-${p.day}`, hour: +p.hour };
+  };
+  const secs = (v, d = 3) => (v == null ? "–" : v.toFixed(d));
+  const SERIES = ["var(--s1)", "var(--s2)", "var(--s3)", "var(--s4)"];
+
+  async function loadStats(quiet = false) {
+    const id = state.current;
+    if (id == null || isOverall()) return;
+    if (!quiet || !state.stats || state.stats.id !== id) { state.stats = { id, data: null, error: null }; renderStats(); }
+    try {
+      const res = await api(`/tracks/${id}/stats`);
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+      if (state.stopped || state.current !== id) return;
+      state.stats = { id, data: body, error: null };
+    } catch (e) {
+      if (state.current !== id) return;
+      state.stats = { id, data: state.stats?.data || null, error: e.message };
+    }
+    renderStats();
+  }
+
+  function renderStats() {
+    const el = $("viewStats");
+    const st = state.stats;
+    if (!st || (!st.data && !st.error)) { el.innerHTML = `<div class="empty">Loading stats…</div>`; return; }
+    if (!st.data) { el.innerHTML = `<div class="empty">Couldn't load stats (${esc(st.error)}).</div>`; return; }
+    const d = st.data;
+    if (!d.teams.some((t) => t.series.length)) { el.innerHTML = `<div class="empty">Stats appear once this track has been running for an hour or two.</div>`; return; }
+
+    // Final order decides the four highlighted teams; everyone else is drawn in gray.
+    const finalOrder = [...d.teams].filter((t) => t.finalTotal != null).sort((a, b) => a.finalTotal - b.finalTotal);
+    const colorOf = new Map(finalOrder.slice(0, 4).map((t, i) => [t.sponsor, SERIES[i]]));
+    const s = d.summary;
+    const cuts = [...d.teams].filter((t) => t.cut != null).sort((a, b) => b.cut - a.cut);
+    const maxCut = Math.max(1, ...cuts.map((t) => t.cut));
+
+    el.innerHTML = `
+      <p class="races-note">From ${esc(etTime.format(new Date(d.from)))} to ${esc(etTime.format(new Date(d.to)))} Eastern. Team totals are saved every hour; new personal bests are counted for rostered pilots on the track's required quad.</p>
+      <div class="stat-tiles">
+        <div class="tile"><b>${s.newBests}</b><span>new personal bests by rostered pilots</span></div>
+        <div class="tile"><b>${s.pilotsImproved}</b><span>pilots improved at least once</span></div>
+        <div class="tile"><b>${secs(s.secondsCut, 1)}s</b><span>cut from team totals, all teams</span></div>
+        <div class="tile"><b>${s.teamLeadChanges}</b><span>changes of team lead</span></div>
+      </div>
+
+      <section class="chart-card" aria-label="Team totals over time">
+        <div class="sec-head"><h2>Team totals over time</h2><span>lower is faster</span></div>
+        <div class="legend">${finalOrder.slice(0, 4).map((t, i) => `<span><i style="background:${SERIES[i]}"></i>${esc(t.sponsor)}</span>`).join("")}<span><i style="background:var(--s-other)"></i>Other teams (hover to highlight)</span></div>
+        <div class="chart-box" id="teamChart"></div>
+        <p class="sub">Each team's line starts once all five of its pilots have a time. Hover or tap the chart to see every team's total for that hour.</p>
+        ${d.leadChanges.length ? `<ul class="lead-list">${d.leadChanges.map((l) => `<li><span>${esc(etTime.format(new Date(l.at)))}</span>Team ${esc(l.to)} took the lead from Team ${esc(l.from)} (${secs(l.total)})</li>`).join("")}</ul>` : `<p class="sub">Team ${esc(finalOrder[0]?.sponsor || "")} led from start to finish.</p>`}
+      </section>
+
+      <section class="chart-card" aria-label="Time cut per team">
+        <div class="sec-head"><h2>Time cut per team</h2><span>from first 5/5 total to final</span></div>
+        <div class="bars">${cuts.map((t) => `
+          <div class="bar-row" title="Team ${esc(t.sponsor)}: ${secs(t.startTotal)} → ${secs(t.finalTotal)}">
+            <span class="bn">Team ${esc(t.sponsor)}</span>
+            <div class="bar-track"><div class="bar-fill" style="width:calc((100% - 4.5rem) * ${(t.cut / maxCut).toFixed(4)})"></div><span class="bar-val" style="left:calc((100% - 4.5rem) * ${(t.cut / maxCut).toFixed(4)})">−${secs(t.cut, 1)}s</span></div>
+            ${t.bestHour ? `<small>Biggest hour: −${secs(t.bestHour.drop, 1)}s, ${esc(etTime.format(new Date(t.bestHour.at)))}</small>` : ""}
+          </div>`).join("")}
+        </div>
+      </section>
+
+      <div class="two-col">
+        <section class="chart-card" aria-label="Most improved pilots">
+          <div class="sec-head"><h2>Most improved</h2><span>seconds gained</span></div>
+          <table class="stbl"><thead><tr><th>Pilot</th><th class="num">New bests</th><th class="num">Gained</th></tr></thead><tbody>
+            ${d.improved.map((p) => `<tr><td>${esc(p.pilot)}<small>Team ${esc(p.team)} · ${secs(p.first)} → ${secs(p.best)}</small></td><td class="num">${p.pbs}</td><td class="num">−${secs(p.gained, 1)}s</td></tr>`).join("")}
+          </tbody></table>
+        </section>
+        <section class="chart-card" aria-label="Biggest single drops">
+          <div class="sec-head"><h2>Biggest single drops</h2><span>one new best</span></div>
+          <table class="stbl"><thead><tr><th>Pilot</th><th class="num">Drop</th></tr></thead><tbody>
+            ${d.drops.map((x) => `<tr><td>${esc(x.pilot)}<small>Team ${esc(x.team)} · ${esc(etTime.format(new Date(x.at)))} · ${secs(x.prev)} → ${secs(x.time)}</small></td><td class="num">−${secs(x.drop, 1)}s</td></tr>`).join("")}
+          </tbody></table>
+        </section>
+      </div>
+
+      <section class="chart-card" aria-label="When pilots improved">
+        <div class="sec-head"><h2>When pilots improved</h2><span>new bests and first times, Eastern time</span></div>
+        <div id="heat"></div>
+      </section>`;
+
+    drawTeamChart(d, colorOf);
+    drawHeat(d.activity);
+  }
+
+  function drawTeamChart(d, colorOf) {
+    const box = $("teamChart");
+    if (!box) return;
+    const W = Math.max(320, box.clientWidth || 800), H = W < 520 ? 240 : 300;
+    const m = { l: 44, r: W < 520 ? 12 : 128, t: 10, b: 26 };
+    const teams = d.teams.map((t) => ({ ...t, pts: t.series.filter((p) => p[2] >= t.size).map(([at, total]) => [Date.parse(at), total]) }));
+    const all = teams.flatMap((t) => t.pts);
+    if (!all.length) { box.innerHTML = `<p class="sub">No team has all five pilots posted yet.</p>`; return; }
+    const times = [...new Set(d.teams.flatMap((t) => t.series.map((p) => Date.parse(p[0]))))].sort((a, b) => a - b);
+    const x0 = times[0], x1 = times[times.length - 1];
+    let y0 = Math.min(...all.map((p) => p[1])), y1 = Math.max(...all.map((p) => p[1]));
+    const step = [5, 10, 20, 25, 50, 100].find((k) => (y1 - y0) / k <= 6) || 200;
+    y0 = Math.floor(y0 / step) * step; y1 = Math.ceil(y1 / step) * step;
+    const X = (t) => m.l + ((t - x0) / Math.max(1, x1 - x0)) * (W - m.l - m.r);
+    const Y = (v) => m.t + ((v - y0) / Math.max(1, y1 - y0)) * (H - m.t - m.b); // lower total = higher on the chart
+    const yTicks = []; for (let v = y0; v <= y1 + 1e-9; v += step) yTicks.push(v);
+    const days = []; for (const t of times) { const k = etParts(new Date(t).toISOString()).day; if (!days.length || days[days.length - 1].k !== k) days.push({ k, t }); }
+    const path = (pts) => pts.map((p, i) => `${i ? "L" : "M"}${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join("");
+    const order = [...teams].sort((a, b) => (colorOf.has(a.sponsor) ? 1 : 0) - (colorOf.has(b.sponsor) ? 1 : 0));
+    const ends = teams.filter((t) => colorOf.has(t.sponsor) && t.pts.length).map((t) => ({ t, y: Y(t.pts[t.pts.length - 1][1]) })).sort((a, b) => a.y - b.y);
+    for (let i = 1; i < ends.length; i++) ends[i].y = Math.max(ends[i].y, ends[i - 1].y + 14); // keep end labels apart
+    box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Team combined times over the week">
+      ${yTicks.map((v) => `<line class="grid" x1="${m.l}" x2="${W - m.r}" y1="${Y(v)}" y2="${Y(v)}"/><text x="${m.l - 6}" y="${Y(v) + 4}" text-anchor="end">${v}</text>`).join("")}
+      ${days.filter((dd, i) => !(i === 0 && days[1] && X(days[1].t) - X(dd.t) < 48)).map((dd) => `<line class="grid" x1="${X(dd.t)}" x2="${X(dd.t)}" y1="${m.t}" y2="${H - m.b}" opacity=".5"/><text x="${X(dd.t) + 3}" y="${H - 8}">${esc(etDay.format(new Date(dd.t)).replace(/,.*$/, ""))} ${new Date(dd.t).toLocaleDateString("en-US", { timeZone: ET, day: "numeric" })}</text>`).join("")}
+      ${order.map((t) => `<path class="tline${colorOf.has(t.sponsor) ? " top" : ""}" data-team="${esc(t.sponsor)}" d="${path(t.pts)}" stroke="${colorOf.get(t.sponsor) || "var(--s-other)"}"/>`).join("")}
+      ${W >= 520 ? ends.map((e) => `<text class="lbl" x="${W - m.r + 8}" y="${e.y + 4}">${esc(e.t.sponsor)}</text>`).join("") : ""}
+      <line class="xhair" id="xhair" x1="0" x2="0" y1="${m.t}" y2="${H - m.b}" visibility="hidden"/>
+      <rect id="hit" x="${m.l}" y="${m.t}" width="${W - m.l - m.r}" height="${H - m.t - m.b}" fill="transparent"/>
+    </svg><div class="tip" id="tip" hidden></div>`;
+
+    const svg = box.querySelector("svg"), hit = box.querySelector("#hit"), xh = box.querySelector("#xhair"), tip = box.querySelector("#tip");
+    const lines = [...box.querySelectorAll(".tline")];
+    const highlight = (team) => lines.forEach((l) => { l.classList.toggle("hot", l.dataset.team === team); l.classList.toggle("dim", !!team && l.dataset.team !== team); });
+    lines.forEach((l) => { l.addEventListener("mouseenter", () => highlight(l.dataset.team)); l.addEventListener("mouseleave", () => highlight(null)); });
+    const move = (clientX, clientY) => {
+      const r = svg.getBoundingClientRect();
+      const px = ((clientX - r.left) / r.width) * W;
+      const t = x0 + ((px - m.l) / (W - m.l - m.r)) * (x1 - x0);
+      const at = times.reduce((best, v) => (Math.abs(v - t) < Math.abs(best - t) ? v : best), times[0]);
+      xh.setAttribute("x1", X(at)); xh.setAttribute("x2", X(at)); xh.setAttribute("visibility", "visible");
+      const rows = d.teams.map((tm) => { const p = tm.series.find((q) => Date.parse(q[0]) === at); return p && { s: tm.sponsor, total: p[1], posted: p[2], size: tm.size }; }).filter(Boolean).sort((a, b) => a.total - b.total);
+      const near = rows.reduce((b, r2) => (Math.abs(Y(r2.total) - ((clientY - r.top) / r.height) * H) < Math.abs(Y(b.total) - ((clientY - r.top) / r.height) * H) ? r2 : b), rows[0]);
+      highlight(near?.s);
+      tip.innerHTML = `<b>${esc(etTime.format(new Date(at)))}</b>` + rows.map((r2) => `<div class="${r2.s === near?.s ? "hot" : ""}"><span><i style="background:${colorOf.get(r2.s) || "var(--s-other)"}"></i>${esc(r2.s)}</span><span>${r2.posted < r2.size ? `${r2.posted}/${r2.size}` : secs(r2.total)}</span></div>`).join("");
+      tip.hidden = false;
+      // Sit beside the crosshair on whichever side has room, always inside the chart.
+      const bx = box.getBoundingClientRect();
+      const px2 = clientX - bx.left, wide = tip.offsetWidth;
+      const left = px2 + 14 + wide <= bx.width ? px2 + 14 : px2 - wide - 14;
+      tip.style.left = `${Math.max(0, Math.min(left, bx.width - wide))}px`;
+      tip.style.top = `${Math.max(0, Math.min(clientY - bx.top - 20, bx.height - tip.offsetHeight))}px`;
+    };
+    hit.addEventListener("mousemove", (e) => move(e.clientX, e.clientY));
+    hit.addEventListener("touchstart", (e) => { const tt = e.touches[0]; move(tt.clientX, tt.clientY); }, { passive: true });
+    hit.addEventListener("mouseleave", () => { tip.hidden = true; xh.setAttribute("visibility", "hidden"); highlight(null); });
+  }
+
+  function drawHeat(activity) {
+    const el = $("heat");
+    if (!el) return;
+    const counts = new Map();
+    const days = [];
+    for (const [at] of activity) {
+      const { day, hour } = etParts(at);
+      if (!days.includes(day)) days.push(day);
+      counts.set(`${day}|${hour}`, (counts.get(`${day}|${hour}`) || 0) + 1);
+    }
+    days.sort();
+    if (!days.length) { el.innerHTML = `<p class="sub">No new bests yet.</p>`; return; }
+    const max = Math.max(...counts.values());
+    const steps = ["var(--h1)", "var(--h2)", "var(--h3)", "var(--h4)", "var(--h5)", "var(--h6)"];
+    const color = (n) => (n ? steps[Math.min(steps.length - 1, Math.ceil((n / max) * steps.length) - 1)] : "");
+    const hourLbl = (h) => (h === 0 ? "12a" : h < 12 ? `${h}a` : h === 12 ? "12p" : `${h - 12}p`);
+    const dayLbl = (k) => etDay.format(new Date(k + "T12:00:00Z")).replace(/,.*$/, "") + " " + +k.slice(8);
+    el.innerHTML = `<div class="heat" role="table" aria-label="New bests by day and hour">
+        <span></span>${Array.from({ length: 24 }, (_, h) => `<span class="hd">${h % 3 === 0 ? hourLbl(h) : ""}</span>`).join("")}
+        ${days.map((k) => `<span class="rd">${esc(dayLbl(k))}</span>${Array.from({ length: 24 }, (_, h) => { const n = counts.get(`${k}|${h}`) || 0; return `<span class="c" data-n="${n}" style="${n ? `background:${color(n)}` : ""}" title="${esc(dayLbl(k))}, ${hourLbl(h)}: ${n} new best${n === 1 ? "" : "s"}"></span>`; }).join("")}`).join("")}
+      </div>
+      <div class="heat-key">Fewer ${steps.map((c2) => `<i style="background:${c2}"></i>`).join("")} More · busiest hour: ${max} new bests</div>`;
+  }
+  let resizeTimer;
+  window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (state.view === "stats" && state.stats?.data && !$("viewStats").hidden) renderStats(); }, 200); });
 
   // ---------- live updates (WebSocket to the track's RaceRoom) ----------
   const live = { id: null, ws: null, onUpdate: null, retry: 1000, timer: null, ping: null, poll: null };
@@ -629,6 +812,7 @@
         renderStandings();
         schedulePoll();
         if (state.view === "races" && !isOverall()) loadRaces();
+        if (state.view === "stats" && !isOverall() && state.data?.track?.status !== "locked") loadStats(true);
       }
     }
   }

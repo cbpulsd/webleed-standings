@@ -6,7 +6,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const [esbuild, out] = process.argv.slice(2);
+const [esbuild, out, statsFixture] = process.argv.slice(2);
+const stats = statsFixture ? readFileSync(statsFixture, "utf8") : "null";
 
 const shim = execFileSync(esbuild, [join(root, "test/preview-shim.js"), "--bundle", "--format=iife", "--platform=browser", "--target=es2020"], { encoding: "utf8" });
 const css = readFileSync(join(root, "public/styles.css"), "utf8");
@@ -41,6 +42,7 @@ ${css}
 </div>
 <div id="app"></div>
 
+<script>window.STATS_FIXTURE = ${stats};</script>
 <script>${shim}</script>
 <script>
 (() => {
@@ -63,9 +65,10 @@ ${css}
     const sc = P.scenarios[name];
     document.getElementById("scenarioNote").textContent = sc.note || "";
     if (sc.view === "races") setTimeout(() => document.getElementById("viewRacesBtn")?.click(), 300);
+    if (sc.view === "stats") setTimeout(() => document.getElementById("viewStatsBtn")?.click(), 300);
   }
   bar.addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) boot(b.dataset.k); });
-  boot("live");
+  boot(${statsFixture ? '"stats"' : '"live"'});
 })();
 </script>
 `;

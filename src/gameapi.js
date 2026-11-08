@@ -51,6 +51,9 @@ export async function decrypt(base64) {
   return dec.decode(out.slice(0, out.length - n));
 }
 
+// The game endpoint's pilot IDs are 55 lower than the real Velocidrone user IDs.
+export const GAME_USER_ID_OFFSET = 55;
+
 // Known model IDs, for replies that only carry the ID.
 export const MODEL_NAMES = { 121: "Hummingbird RS" };
 
@@ -65,7 +68,7 @@ export function gameRows(data) {
         name: String(t.playername ?? "").trim(),
         model: t.model_name || MODEL_NAMES[modelId] || null,
         modelId,
-        userId: t.user_id != null ? Number(t.user_id) : null,
+        userId: t.user_id != null ? Number(t.user_id) + GAME_USER_ID_OFFSET : null,
       };
     })
     .filter((r) => r.name && Number.isFinite(r.time))

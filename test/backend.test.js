@@ -9,6 +9,7 @@ import { ALIASES, TEAMS, TRACKS } from "../src/config.js";
 import { encrypt } from "../src/gameapi.js";
 import { RaceRoom } from "../src/raceroom.js";
 import { parseRaceTime, positionsFor } from "../src/races.js";
+import { diffEvents } from "../src/standings.js";
 
 const T1 = TRACKS[0];
 const LOCK = Date.parse(T1.locksAt);
@@ -284,7 +285,7 @@ test("game endpoint is used first; times carry pilot IDs and models", async () =
   const r = await runSchedule(env, LOCK - HOUR, { fetchImpl: site.fetch, retryDelayMs: 0 });
   assert.equal(r[0].record.source, "game");
   assert.equal(site.calls, 0, "page not loaded when the game endpoint works");
-  assert.equal(r[0].record.rows[0].userId, 1000);
+  assert.equal(r[0].record.rows[0].userId, 1055, "game IDs are 55 low; stored corrected");
   assert.equal(r[0].record.rows[0].model, "Hummingbird RS");
   const body = await get(env, "/api/tracks/1", LOCK - HOUR + 60_000, {});
   assert.equal(body.source, "game");
@@ -345,16 +346,16 @@ test("standings record each pilot's Velocidrone name, pilot ID and model ID", as
   await runSchedule(env, LOCK - HOUR, { fetchImpl: site.fetch, retryDelayMs: 0 });
   const body = await get(env, "/api/tracks/1", LOCK - HOUR + 60_000, {});
   const xer = body.standings.teams.find((t) => t.sponsor === "WREKD").pilots.find((p) => p.name === "xer");
-  assert.equal(xer.userId, 1001);
+  assert.equal(xer.userId, 1056);
   assert.equal(xer.modelId, 121);
   assert.equal(xer.model, "Hummingbird RS");
   assert.equal(xer.velocidroneName, "xer \u200e");
   // ...and they're kept in the frozen copy at the lock, and in the hourly history.
   await runSchedule(env, LOCK + 1000, { fetchImpl: site.fetch, retryDelayMs: 0 });
   const locked = await env.STANDINGS.get("track:1", "json");
-  assert.equal(locked.standings.teams.find((t) => t.sponsor === "WREKD").pilots.find((p) => p.name === "xer").userId, 1001);
+  assert.equal(locked.standings.teams.find((t) => t.sponsor === "WREKD").pilots.find((p) => p.name === "xer").userId, 1056);
   const hist = await env.STANDINGS.get("history:1", "json");
-  assert.equal(hist.at(-1).ids.xer, 1001);
+  assert.equal(hist.at(-1).ids.xer, 1056);
 });
 
 test("check link can inspect another Velocidrone track and one pilot's name match", async () => {
@@ -595,4 +596,65 @@ test("a lock run up to 60 s late still fetches; later, it uses the 11:58 PM refr
     const tmad = r[0].record.standings.teams.find((t) => t.sponsor === "Velocidrone").pilots.find((p) => p.captain);
     assert.equal(tmad.time, expectTime);
   }
+});
+
+
+test("each refresh records first times and new personal bests on the required quad", async () => {
+  const env = { STANDINGS: new MemoryKV() };
+  const site = fakeSite([[1, "70.000", "TMAD"], [2, "80.000", "Senko"]]);
+  const deps = { fetchImpl: site.fetch, retryDelayMs: 0 };
+  await runSchedule(env, LOCK - 3 * HOUR, deps); // first save: nothing to compare with yet
+  site.rows = [[1, "68.500", "TMAD"], [2, "80.000", "Senko"], [3, "90.000", "xer"], [4, "50.000", "Blastaa", "Tiny Hawk"]];
+  await runSchedule(env, LOCK - 3 * HOUR + 5 * 60_000, deps);
+  await runSchedule(env, LOCK - 3 * HOUR + 10 * 60_000, deps); // no change: nothing written
+  const ev = await env.STANDINGS.get("events:1", "json");
+  assert.deepEqual(ev.map((e) => [e.name, e.kind, e.prev, e.time]), [["TMAD", "pb", 70, 68.5], ["xer", "debut", null, 90]], "Tiny Hawk time ignored");
+  site.rows = [[1, "68.000", "TMAD"], [2, "80.000", "Senko"], [3, "90.000", "xer"]];
+  await runSchedule(env, LOCK + 10_000, deps); // the lock's final fetch counts too
+  assert.equal((await env.STANDINGS.get("events:1", "json")).at(-1).time, 68);
+  assert.deepEqual(diffEvents([{ name: "A", time: 50, rank: 1 }], [{ name: "A", time: 50.0004, rank: 1 }], "t"), [], "no event without a faster time");
+});
+
+test("stats: team totals over time, time cut, lead changes, most improved, biggest drops", async () => {
+  const env = { STANDINGS: new MemoryKV() };
+  const site = fakeSite([]);
+  const five = (team) => [team.captain, ...team.pilots];
+  const [emax, wrekd] = [TEAMS[0], TEAMS[7]];
+  const board = (emaxT, wrekdT) => [...five(emax).map((n, i) => [i + 1, (emaxT + i).toFixed(3), n]), ...five(wrekd).map((n, i) => [i + 10, (wrekdT + i).toFixed(3), n])];
+  site.rows = board(80, 70);
+  await runSchedule(env, LOCK - 3 * HOUR + 60_000, { fetchImpl: site.fetch, retryDelayMs: 0 }); // 9 PM
+  site.rows = board(60, 70);
+  await runSchedule(env, LOCK - 2 * HOUR + 60_000, { fetchImpl: site.fetch, retryDelayMs: 0 }); // 10 PM: EMAX takes the lead
+  const st = await get(env, "/api/tracks/1/stats", LOCK - HOUR, {});
+  const e = st.teams.find((t) => t.sponsor === "EMAX USA");
+  assert.equal(e.series.length, 2);
+  assert.equal(e.startTotal, 410);
+  assert.equal(e.finalTotal, 310);
+  assert.equal(e.cut, 100);
+  assert.equal(e.bestHour.drop, 100);
+  assert.equal(st.teams.find((t) => t.sponsor === "BETAFPV").cut, null, "teams never at 5/5 have no cut");
+  assert.deepEqual(st.leadChanges.map((l) => [l.from, l.to]), [["WREKD", "EMAX USA"]]);
+  assert.equal(st.summary.newBests, 5);
+  assert.equal(st.improved[0].team, "EMAX USA");
+  assert.equal(st.improved[0].gained, 20);
+  assert.equal(st.drops[0].drop, 20);
+  assert.equal(st.activity.length, 5, "the first save has nothing to compare with, so only the 10 PM bests count");
+});
+
+test("one-time import fills history before ours began and sets events; needs director sign-in", async () => {
+  const env = { STANDINGS: new MemoryKV() };
+  await env.STANDINGS.put("history:1", JSON.stringify([{ at: "2026-11-03T22:22:29.151Z", teams: [["WREKD", 400, 5]], pilots: {} }]));
+  const body = {
+    history: [
+      { at: "2026-11-02T00:00:00.000Z", teams: [["WREKD", 500, 4]], pilots: {} },
+      { at: "2026-11-03T23:00:00.000Z", teams: [["WREKD", 1, 5]], pilots: {} }, // after ours began: ignored
+      { at: "2026-11-02T01:00:00.000Z", nope: true },
+    ],
+    events: [{ at: "2026-11-02T01:00:00.000Z", name: "TMAD", kind: "pb", prev: 70, time: 69, rank: 5 }, { bad: 1 }],
+  };
+  assert.equal((await req(env, "POST", "/api/admin/tracks/1/backfill", {}, body)).status, 403);
+  const r = await call(env, "POST", "/api/admin/tracks/1/backfill", body);
+  assert.deepEqual(await r.json(), { historyAdded: 1, historyTotal: 2, events: 1 });
+  const h = await env.STANDINGS.get("history:1", "json");
+  assert.deepEqual(h.map((x) => x.teams[0][1]), [500, 400]);
 });

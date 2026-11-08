@@ -6,6 +6,8 @@
 //   GET  /api/tracks/:id/history              -> that track's hourly snapshots
 //   GET  /api/tracks/:id/races                -> that track's race day: lineups, 4 tiers x 8 races, times, points
 //   GET  /api/tracks/:id/races/live           -> WebSocket: sends {"type":"update"} whenever race day changes
+//   GET  /api/tracks/:id/stats                -> team totals over time, time cut, most improved, biggest drops, activity
+//   POST /api/admin/tracks/:id/backfill       -> one-time import: { history: [...earlier hours], events: [...] } (race director sign-in)
 //   GET  /api/overall                         -> season table: Smash and Race points per team per week
 //   GET  /api/health/source/:id               -> read-only check that the game endpoint answers (cached 5 min)
 //   POST /api/admin/tracks/:id/refresh|lock   -> manual controls (needs the ADMIN_TOKEN secret)
@@ -24,7 +26,8 @@ import { raceStore } from "./racestore.js";
 export { RaceRoom } from "./raceroom.js";
 import { fetchGameLeaderboard, gameRows } from "./gameapi.js";
 import { trackIdFromUrl } from "./leaderboard.js";
-import { getHistory, getRecord } from "./store.js";
+import { getEvents, getHistory, getRecord } from "./store.js";
+import { computeStats } from "./stats.js";
 import { findTrack, lockTrack, lockTime, runSchedule, standingsFor, syncTrack, teamsFor, trackStatus } from "./sync.js";
 
 export default {
@@ -78,6 +81,15 @@ export async function route(request, url, env, ctx, now, deps = {}) {
     return json(await overall(env, now), 200, "public, max-age=60");
   }
 
+  // /api/tracks/:id/stats
+  if (request.method === "GET" && parts[1] === "tracks" && parts.length === 4 && parts[3] === "stats") {
+    const track = findTrack(parts[2]);
+    if (!track) return json({ error: "no such track" }, 404, "no-store");
+    const [history, events, record] = await Promise.all([getHistory(env, track.id), getEvents(env, track.id), track.leaderboardUrl ? getRecord(env, track.id) : null]);
+    const teams = record?.status === "locked" && record.teams ? record.teams : teamsFor(track);
+    return json(computeStats(track, history, events, teams), 200, record?.status === "locked" ? "public, max-age=3600" : "public, max-age=120");
+  }
+
   // /api/tracks/:id/races/live
   if (request.method === "GET" && parts[1] === "tracks" && parts.length === 5 && parts[3] === "races" && parts[4] === "live") {
     const track = findTrack(parts[2]);
@@ -93,7 +105,7 @@ export async function route(request, url, env, ctx, now, deps = {}) {
   }
 
   // Race director page
-  if (parts[1] === "admin" && (parts[2] === "login" || (parts[2] === "tracks" && parts[4] === "races"))) {
+  if (parts[1] === "admin" && (parts[2] === "login" || (parts[2] === "tracks" && (parts[4] === "races" || parts[4] === "backfill")))) {
     if (parts[2] === "login") {
       if (request.method !== "POST" || !(await passwordOk(env, request.headers.get("x-admin-password")))) return json({ error: "wrong password" }, 403, "no-store");
       const expiresAt = now + SESSION_HOURS * 3_600_000;
@@ -103,6 +115,10 @@ export async function route(request, url, env, ctx, now, deps = {}) {
     const track = findTrack(parts[3]);
     if (!track) return json({ error: "no such track" }, 404, "no-store");
 
+    if (request.method === "POST" && parts[4] === "backfill" && parts.length === 5) {
+      const body = await request.json().catch(() => null);
+      return json(await backfill(env, track, body), body ? 200 : 400, "no-store");
+    }
     if (request.method === "GET" && parts.length === 5) {
       return json({ ...(await racesFor(env, track, now)), satBefore: await satBefore(env, track) }, 200, "no-store");
     }
@@ -274,6 +290,30 @@ async function sessionOk(env, session, now) {
   let diff = 0;
   for (let i = 0; i < 64; i++) diff |= expected.charCodeAt(i) ^ m[2].charCodeAt(i);
   return diff === 0;
+}
+
+// One-time import from another archive: adds hourly history from before our own
+// history began (our hours always win), and replaces the events list.
+async function backfill(env, track, body) {
+  if (!body) return { error: "send JSON" };
+  const okEntry = (h) => h && typeof h.at === "string" && Array.isArray(h.teams);
+  const okEvent = (e) => e && typeof e.at === "string" && typeof e.name === "string" && (e.kind === "pb" || e.kind === "debut") && typeof e.time === "number";
+  const result = {};
+  if (Array.isArray(body.history)) {
+    const mine = await getHistory(env, track.id);
+    const earliest = mine.length ? mine.map((h) => h.at).sort()[0] : "9999";
+    const add = body.history.filter((h) => okEntry(h) && h.at < earliest);
+    const merged = [...add, ...mine].sort((a, b) => a.at.localeCompare(b.at));
+    await env.STANDINGS.put(`history:${track.id}`, JSON.stringify(merged));
+    result.historyAdded = add.length;
+    result.historyTotal = merged.length;
+  }
+  if (Array.isArray(body.events)) {
+    const events = body.events.filter(okEvent).sort((a, b) => a.at.localeCompare(b.at));
+    await env.STANDINGS.put(`events:${track.id}`, JSON.stringify(events));
+    result.events = events.length;
+  }
+  return result;
 }
 
 async function passwordOk(env, given) {

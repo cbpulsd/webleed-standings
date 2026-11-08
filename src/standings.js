@@ -59,6 +59,29 @@ export function computeStandings(rows, teams, aliases = {}, quad = null) {
   return { teams: ranked };
 }
 
+// What changed between two saves of a board: a pilot's first time ("debut") or a
+// faster personal best ("pb"). Only times on the track's required quad count.
+// Event: { at, name, kind, prev, time, prevRank, rank, userId }
+export function diffEvents(prevRows, rows, at, quad = null) {
+  const bestBy = (list) => {
+    const m = new Map();
+    for (const r of list || []) {
+      if (!quadAllowed(r, quad)) continue;
+      const k = norm(r.name);
+      if (k && (!m.has(k) || m.get(k).time > r.time)) m.set(k, r);
+    }
+    return m;
+  };
+  const before = bestBy(prevRows);
+  const out = [];
+  for (const [k, r] of bestBy(rows)) {
+    const p = before.get(k);
+    if (!p) out.push({ at, name: r.name, kind: "debut", prev: null, time: r.time, prevRank: null, rank: r.rank, userId: r.userId ?? null });
+    else if (r.time < p.time - 0.0005) out.push({ at, name: r.name, kind: "pb", prev: p.time, time: r.time, prevRank: p.rank, rank: r.rank, userId: r.userId ?? p.userId ?? null });
+  }
+  return out.sort((a, b) => a.rank - b.rank);
+}
+
 // Small per-hour record of where everyone stood, for charts later.
 export function compactSnapshot(standings, at) {
   return {

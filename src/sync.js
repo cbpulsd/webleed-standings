@@ -2,8 +2,8 @@
 
 import { ALIASES, FINAL_FETCH_WINDOW_SECONDS, TEAMS, TRACKS } from "./config.js";
 import { fetchLeaderboard } from "./leaderboard.js";
-import { compactSnapshot, computeStandings } from "./standings.js";
-import { appendHistory, getRecord, putRecord } from "./store.js";
+import { compactSnapshot, computeStandings, diffEvents } from "./standings.js";
+import { appendEvents, appendHistory, getRecord, putRecord } from "./store.js";
 
 export const findTrack = (id) => TRACKS.find((t) => String(t.id) === String(id)) || null;
 export const teamsFor = (track) => track.teams || TEAMS;
@@ -52,6 +52,8 @@ export async function syncTrack(env, track, now, { force = false, staleMs = 0, f
   const current = await getRecord(env, track.id);
   if (current?.status === "locked") return { action: "skip-locked", record: current };
   await putRecord(env, track.id, next);
+  // Record new pilots and personal bests (only written when something changed).
+  if (record?.rows) await appendEvents(env, track.id, diffEvents(record.rows, rows, fetchedAt, track.quad || null));
   // History keeps one snapshot an hour (the run on the hour), to stay well under KV's daily write limit.
   if (new Date(now).getUTCMinutes() === 0) await appendHistory(env, track.id, compactSnapshot(standingsFor(track, rows), fetchedAt));
   return { action: "refreshed", record: next };
@@ -106,6 +108,7 @@ export async function lockTrack(env, track, record, now, { fetchImpl, attempts =
     standings, // frozen: later roster or name fixes don't change a locked track
   };
   await putRecord(env, track.id, locked);
+  if (lockMethod === "final-fetch" && record?.rows) await appendEvents(env, track.id, diffEvents(record.rows, rows, fetchedAt, track.quad || null));
   await appendHistory(env, track.id, { ...compactSnapshot(standings, fetchedAt), final: true });
   return { action: "locked", record: locked };
 }
