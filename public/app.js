@@ -271,16 +271,65 @@
 
   function raceSummaryTable(d) {
     const tiers = d.tierResults.map((t) => t.tier);
+    const hasBonus = !!d.bonus?.seeds?.length;
     return `
       <div class="table-wrap"><table class="overall grid">
-        <thead><tr><th class="team-col" scope="col">Team</th>${tiers.map((t) => `<th class="num wk-start" scope="col">Tier ${t}</th>`).join("")}<th class="num tot" scope="col">Total</th><th class="wk-start sit" scope="col">Sitting out</th></tr></thead>
+        <thead><tr><th class="team-col" scope="col">Team</th>${tiers.map((t) => `<th class="num wk-start" scope="col">Tier ${t}</th>`).join("")}${hasBonus ? `<th class="num wk-start" scope="col">Bonus</th>` : ""}<th class="num tot" scope="col">Total</th><th class="wk-start sit" scope="col">Sitting out</th></tr></thead>
         <tbody>${d.teams.map((t) => `<tr>
           <th class="team-col" scope="row"><div class="ocell">${place(t.place)}<span class="oname"><b>Team ${esc(t.sponsor)}</b><small>Capt ${esc(t.captain)}</small></span></div></th>
           ${tiers.map((ti) => `<td class="num wk-start">${pts(t.byTier[ti])}</td>`).join("")}
+          ${hasBonus ? `<td class="num wk-start" title="${t.bonusPlace ? `${ordinal(t.bonusPlace)} in the bonus round` : t.seed ? `Seed #${t.seed} in the bonus round` : "Not in the bonus round"}">${t.bonus != null ? "+" + t.bonus : t.seed ? `<span class="tbd">#${t.seed}</span>` : ""}</td>` : ""}
           <td class="num tot">${pts(t.total)}</td>
           <td class="wk-start sit">${t.sitting ? esc(t.sitting) : '<span class="tbd">TBD</span>'}</td>
         </tr>`).join("")}</tbody>
       </table></div>`;
+  }
+
+  // ---------- bonus round ----------
+  const bonusIntro = (b) => `Top ${b.seeds.length || 4} teams by race points. #1 v #4 and #2 v #3 fly ${b.heats} heats with all four racers (eight pilots a heat, scored like the tiers); the winners then fly ${b.heats} heats for 1st and 2nd, the losers for 3rd and 4th. Bonus race points: ${b.placePoints.map((p, i) => `${ordinal(i + 1)} +${p}`).join(" · ")}.`;
+  const bonusMeta = (b) => (!b?.seeds?.length ? "after the tiers" : b.places.length === 4 ? `Won by Team ${esc(b.places[0].sponsor)}` : b.matches.some((m) => m.heats.some((h) => h.run)) ? "in progress" : "seeds set");
+  function bonusPlaces(b) {
+    if (!b.places.length) return "";
+    return `<div class="bonus-places">${b.places.map((p) => `<span><b>${ordinal(p.place)}</b> Team ${esc(p.sponsor)} <em>+${p.points}</em></span>`).join("")}</div>`;
+  }
+  function bonusMatch(m, b, edit) {
+    const [a, c] = m.teams;
+    if (!a || !c) return `<div class="bonus-match"><h3>${esc(m.label)}</h3><p class="sub">${m.id === "final" ? "Semifinal winners" : "Semifinal losers"} fly here once both semifinals are done.</p></div>`;
+    const seedOf = (sp) => b.seeds.indexOf(sp) + 1;
+    const score = m.totals ? `${m.totals[a]}–${m.totals[c]}` : "";
+    const head = `<h3>${esc(m.label)} <span class="vs">#${seedOf(a)} Team ${esc(a)} v #${seedOf(c)} Team ${esc(c)}</span>${m.heats.some((h) => h.run) ? `<span class="score" data-bscore="${m.id}">${score}${m.winner ? ` · Team ${esc(m.winner)} wins` : m.tied ? " · tied" : ""}</span>` : ""}</h3>`;
+    const rows = [a, c].map((sp) => {
+      const pilots = [1, 2, 3, 4].map((tier) => {
+        const cells = m.heats.map((h) => h.entries.find((e) => e.sponsor === sp && e.tier === tier));
+        const pilot = cells[0]?.pilot;
+        const sum = cells.reduce((s2, e) => s2 + (e?.points || 0), 0);
+        return `<tr>
+          <th class="team-col" scope="row"><div class="ocell"><span class="oname"><b>${pilotLabel(pilot)}</b><small>Tier ${tier}</small></span></div></th>
+          ${cells.map((e, hi) => edit
+            ? `<td class="tcell${hi === 0 ? " wk-start" : ""}"><input class="tin" data-kind="btime" data-match="${m.id}" data-heat="${hi + 1}" data-sponsor="${esc(sp)}" data-tier="${tier}" value="${fmtTime(e?.time)}" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="–" aria-label="${esc(m.label)}, heat ${hi + 1}, Team ${esc(sp)} tier ${tier} time"><small class="tres" data-bres="${m.id}|${hi + 1}|${esc(sp)}|${tier}">${e?.time == null ? "" : e.time === "dnf" ? "DNF · 0" : `${ordinal(e.position)} · ${e.points}`}</small></td>`
+            : `<td class="num rc${hi === 0 ? " wk-start" : ""}">${e?.time == null ? "–" : `<b>${pts(e.points)}</b><small${e.time === "dnf" ? ' class="dnf"' : ""}>${fmtTime(e.time)}</small>`}</td>`).join("")}
+          <td class="num tot">${m.heats.some((h) => h.run) ? sum : "–"}</td>
+        </tr>`;
+      }).join("");
+      return `${pilots}<tr class="bonus-team${m.winner === sp ? " won" : ""}">
+          <th class="team-col" scope="row">Team ${esc(sp)}</th>
+          ${m.heats.map((h, hi) => `<td class="num${hi === 0 ? " wk-start" : ""}" data-bheat="${m.id}|${hi + 1}|${esc(sp)}">${h.run ? h.score[sp] : "–"}</td>`).join("")}
+          <td class="num tot" data-btot="${m.id}|${esc(sp)}">${m.heats.some((h) => h.run) ? m.totals[sp] : "–"}</td>
+        </tr>`;
+    }).join("");
+    return `<div class="bonus-match">${head}
+      <div class="table-wrap"><table class="overall grid${edit ? " admin-grid" : ""}">
+        <thead><tr><th class="team-col" scope="col">Pilot</th>${m.heats.map((h, hi) => `<th class="num${hi === 0 ? " wk-start" : ""}" scope="col">Heat ${h.heat}</th>`).join("")}<th class="num tot" scope="col">Points</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div></div>`;
+  }
+  function bonusSection(d, edit = false) {
+    const b = d.bonus;
+    if (!b) return "";
+    if (!b.seeds.length) return `<p class="races-note">${esc(bonusIntro(b))} The top four are seeded once race points are in.</p>`;
+    return `<p class="races-note">${esc(bonusIntro(b))}${b.provisional ? " Seeds can still change until every tier has finished its races." : ""}</p>
+      ${bonusPlaces(b)}
+      ${b.matches.map((m) => bonusMatch(m, b, edit)).join("")}`;
   }
 
   function renderRaces() {
@@ -306,6 +355,7 @@
     el.innerHTML = `
       <p class="races-note"><b>Race day: ${esc(raceDayText(d))}.</b> Each team races four of its five pilots, one per tier, and sits one. Every tier runs ${d.racesPerTier} races. Points by finishing position: ${pointsLine}. In each tier, a race shows the points earned and the pilot's 3-lap time underneath.${anyResults ? "" : " Lineups and results appear here on race day."}${d.live ? ' <span class="live-pill">Updates live</span>' : ""}</p>
       ${fold("summary", "Team race points", leaderOf(d.teams), summary)}
+      ${d.bonus ? fold("bonus", "Bonus round", bonusMeta(d.bonus), bonusSection(d)) : ""}
       ${tierTables}
       <div class="races-foot"><a class="btn" href="#admin-${d.track}">Race director: enter results</a></div>`;
   }
@@ -838,9 +888,12 @@
       <p class="races-note">Times are in seconds (45.123 or 1:05.432). Type <b>DNF</b> for a pilot who didn't finish, or clear the box to remove a time. The fastest time in each race finishes 1st.</p>
       ${fold("adm-sit", "Who sits out", `${picked} of ${d.teams.length} picked`, `<p class="sit-hint">Pilots are listed in their team's Smash order for this track. The four who race fill Tiers 1–4 in that order.</p><div class="sit-grid">${sitCards}</div>`)}
       ${fold("adm-summary", "Team race points", leaderOf(d.teams), `<div id="admSummary">${raceSummaryTable(d)}</div>`)}
-      ${tierTables}`;
+      ${tierTables}
+      ${d.bonus ? fold("adm-bonus", "Bonus round", bonusMeta(d.bonus), `<div id="admBonus" data-shape="${bonusShape(d)}">${bonusSection(d, true)}</div>`) : ""}`;
     renderSaveState();
   }
+
+  const bonusShape = (d) => (d.bonus ? d.bonus.matches.map((m) => m.teams.join("+")).join("|") + "|" + d.bonus.seeds.join("+") : "");
 
   function resLabel(e, ri) {
     const tm = e.times[ri];
@@ -880,6 +933,35 @@
     }
     const sm = $("admSummary");
     if (sm) sm.innerHTML = raceSummaryTable(d);
+    const bx = $("admBonus");
+    if (bx && d.bonus) {
+      if (bx.dataset.shape !== bonusShape(d) && !bx.contains(focused) && !bx.querySelector("[data-dirty]")) {
+        bx.dataset.shape = bonusShape(d);
+        bx.innerHTML = bonusSection(d, true);
+      } else {
+        for (const m of d.bonus.matches) {
+          for (const h of m.heats) {
+            for (const e of h.entries) {
+              const k = `${m.id}|${h.heat}|${e.sponsor}|${e.tier}`;
+              const inp = bx.querySelector(`input[data-match="${m.id}"][data-heat="${h.heat}"][data-sponsor="${CSS.escape(e.sponsor)}"][data-tier="${e.tier}"]`);
+              if (inp && inp !== focused && !inp.dataset.dirty) { inp.value = fmtTime(e.time); inp.classList.remove("bad"); }
+              const res = bx.querySelector(`[data-bres="${CSS.escape(k)}"]`);
+              if (res) res.textContent = e.time == null ? "" : e.time === "dnf" ? "DNF · 0" : `${ordinal(e.position)} · ${e.points}`;
+            }
+            for (const sp of m.teams) { const c = bx.querySelector(`[data-bheat="${CSS.escape(`${m.id}|${h.heat}|${sp}`)}"]`); if (c) c.textContent = h.run ? h.score[sp] : "–"; }
+          }
+          for (const sp of m.teams) { const c = bx.querySelector(`[data-btot="${CSS.escape(`${m.id}|${sp}`)}"]`); if (c && m.totals) c.textContent = m.heats.some((h) => h.run) ? m.totals[sp] : "–"; }
+          const sc = bx.querySelector(`[data-bscore="${m.id}"]`);
+          if (sc && m.totals) sc.textContent = `${m.totals[m.teams[0]]}–${m.totals[m.teams[1]]}${m.winner ? ` · Team ${m.winner} wins` : m.tied ? " · tied" : ""}`;
+        }
+        const pl = bx.querySelector(".bonus-places");
+        const fresh = bonusPlaces(d.bonus);
+        if (pl) pl.outerHTML = fresh || "<span></span>";
+        else if (fresh) bx.querySelector(".races-note")?.insertAdjacentHTML("afterend", fresh);
+      }
+      const mb = root.querySelector('[data-meta="adm-bonus"]');
+      if (mb) mb.innerHTML = bonusMeta(d.bonus);
+    }
     const m1 = root.querySelector('[data-meta="adm-summary"]');
     if (m1) m1.innerHTML = leaderOf(d.teams);
     const m2 = root.querySelector('[data-meta="adm-sit"]');
@@ -934,10 +1016,22 @@
       }
       el.value = fmtTime(t);
       saveEdit(`/tracks/${adm.id}/races/tiers/${el.dataset.tier}`, { results: { [el.dataset.race]: { [el.dataset.sponsor]: t === null ? null : t === "dnf" ? "DNF" : String(t) } } }, el);
+    } else if (el.dataset.kind === "btime") {
+      const t = parseTime(el.value);
+      if (t === undefined) {
+        el.classList.add("bad");
+        el.dataset.dirty = "1";
+        el.title = "Use seconds like 45.123 or 1:05.432, or DNF";
+        adm.error = `"${el.value}" isn't a race time. Use seconds like 45.123, or DNF.`;
+        return renderSaveState();
+      }
+      el.value = fmtTime(t);
+      const v = t === null ? null : t === "dnf" ? "DNF" : String(t);
+      saveEdit(`/tracks/${adm.id}/races/bonus`, { results: { [el.dataset.match]: { [el.dataset.heat]: { [el.dataset.sponsor]: { [el.dataset.tier]: v } } } } }, el);
     }
   });
   $("viewAdmin").addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && e.target.dataset?.kind === "time") e.target.blur();
+    if (e.key === "Enter" && (e.target.dataset?.kind === "time" || e.target.dataset?.kind === "btime")) e.target.blur();
   });
   $("viewAdmin").addEventListener("submit", async (e) => {
     if (e.target.id !== "gateForm") return;
@@ -969,7 +1063,7 @@
 
   // Which race sections are open. Team race points starts open, tiers closed;
   // a viewer's choice is kept when the data refreshes.
-  const foldState = { summary: true, "adm-sit": true, "adm-summary": true };
+  const foldState = { summary: true, bonus: true, "adm-sit": true, "adm-summary": true, "adm-bonus": true };
   const isOpen = (key) => foldState[key] ?? false;
   for (const id of ["viewRaces", "viewAdmin"]) $(id).addEventListener("toggle", (e) => {
     const k = e.target?.dataset?.fold;

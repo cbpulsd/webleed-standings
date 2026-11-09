@@ -688,3 +688,50 @@ test("league-set times replace Velocidrone's slower listing (none are set right 
   assert.deepEqual(overrideSnapshot(snap, o).teams, [["Fractal Engineering", 449.915, 5], ["WREKD", 400, 5]]);
   assert.equal(overrideSnapshot({ ...snap, at: "2026-11-03T20:00:00Z" }, o).pilots.AyyyKayyy, 76.095, "not before since");
 });
+
+test("bonus round: Week 1 top four, semis, final and 3rd place, 3/2/1/0 added to race points", async () => {
+  const { computeRaces, applyBonusPatch, applyResultsPatch, applySittingPatch } = await import("../src/races.js");
+  const { readFileSync } = await import("node:fs");
+  const w = JSON.parse(readFileSync(new URL("./fixtures/week1-races.json", import.meta.url), "utf8"));
+  const standings = { teams: TEAMS.map((t) => ({ sponsor: t.sponsor, pilots: w.order[t.sponsor].map((name) => ({ name })) })) };
+  const docs = { lineup: applySittingPatch(null, w.sitting, TEAMS), tiers: {}, bonus: {} };
+  for (const n of [1, 2, 3, 4]) docs.tiers[n] = applyResultsPatch(null, w.tiers[n], TEAMS);
+
+  // Before any bonus heats: seeds only.
+  let r = computeRaces(TRACKS[0], docs, TEAMS, standings);
+  assert.deepEqual(r.bonus.seeds, ["DamagD", "Happymodel", "MEPSKING", "EMAX USA"]);
+  assert.deepEqual(r.bonus.matches.map((m) => m.teams), [["DamagD", "EMAX USA"], ["Happymodel", "MEPSKING"], [null, null], [null, null]]);
+  assert.equal(r.teams[0].total, 222);
+
+  docs.bonus = applyBonusPatch(null, w.bonus, TEAMS);
+  r = computeRaces(TRACKS[0], docs, TEAMS, standings);
+  const m = Object.fromEntries(r.bonus.matches.map((x) => [x.id, x]));
+  assert.deepEqual(m.semi1.totals, { DamagD: 80, "EMAX USA": 76 });
+  assert.deepEqual(m.semi2.totals, { Happymodel: 83, MEPSKING: 73 });
+  assert.deepEqual(m.final.totals, { DamagD: 83, Happymodel: 73 });
+  assert.deepEqual(m.third.totals, { MEPSKING: 81, "EMAX USA": 75 });
+  assert.deepEqual(m.final.heats.map((h) => h.score.DamagD), [27, 29, 27], "heat 2 is 29-23 by the times");
+  assert.deepEqual(r.bonus.places.map((p) => [p.place, p.sponsor, p.points]), [[1, "DamagD", 3], [2, "Happymodel", 2], [3, "MEPSKING", 1], [4, "EMAX USA", 0]]);
+  assert.deepEqual(r.teams.slice(0, 5).map((t) => [t.sponsor, t.raceTotal, t.bonus, t.total]), [
+    ["DamagD", 222, 3, 225], ["Happymodel", 219, 2, 221], ["MEPSKING", 208, 1, 209], ["EMAX USA", 206, 0, 206], ["Fractal Engineering", 200, null, 200],
+  ]);
+  // Every bonus heat: 8 pilots scoring 10 down to 3.
+  for (const x of r.bonus.matches) for (const h of x.heats) assert.deepEqual(h.entries.map((e) => e.points).sort((a, b) => b - a), [10, 9, 8, 7, 6, 5, 4, 3]);
+  // Clearing a time and bad input.
+  const cleared = applyBonusPatch(docs.bonus, { final: { 1: { DamagD: { 1: null } } } }, TEAMS);
+  assert.equal(cleared.results.final[1].DamagD[1], undefined);
+  assert.equal(computeRaces(TRACKS[0], { ...docs, bonus: cleared }, TEAMS, standings).bonus.places.length, 2, "final incomplete: only 3rd/4th placed");
+  assert.throws(() => applyBonusPatch(null, { semi3: {} }, TEAMS), /no bonus match/);
+  assert.throws(() => applyBonusPatch(null, { semi1: { 4: {} } }, TEAMS), /no bonus heat/);
+  assert.throws(() => applyBonusPatch(null, { semi1: { 1: { DamagD: { 1: "fast" } } } }, TEAMS), /isn't a race time/);
+});
+
+for (const [store, makeEnv] of [["KV", () => ({ STANDINGS: new MemoryKV() })], ["Durable Object", () => ({ STANDINGS: new MemoryKV(), RACES_DO: fakeRaceRooms() })]])
+test(`bonus round edits go through the director route (${store})`, async () => {
+  const env = makeEnv();
+  const res = await call(env, "PATCH", "/api/admin/tracks/1/races/bonus", { results: { semi1: { 1: { DamagD: { 1: "74.792" } } } } });
+  assert.equal(res.status, 200);
+  const { raceStore } = await import("../src/racestore.js");
+  assert.deepEqual((await raceStore(env, 1).docs()).bonus.results, { semi1: { 1: { DamagD: { 1: 74.792 } } } });
+  assert.equal((await req(env, "PATCH", "/api/admin/tracks/1/races/bonus", {}, { results: {} })).status, 403);
+});

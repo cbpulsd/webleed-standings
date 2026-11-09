@@ -24,6 +24,7 @@ const SCENARIOS = {
   final: { label: "After the lock (final)", at: () => LOCK + 26 * HOUR },
   stats: { label: "Smash Stats (real Track 1 week)", at: () => LOCK + 26 * HOUR, view: "stats", note: "Smash Stats tab with the real Track 1 week: hourly team totals and every new best from Nov 2 to the lock." },
   racestats: { label: "Race Stats (real Week 1)", at: () => LOCK + 26 * HOUR, view: "racestats", note: "Race Stats tab with the real Week 1 race day: sit-outs, tiers and all 320 heat times." },
+  week1: { label: "Races, real Week 1 + bonus round", at: () => LOCK + 26 * HOUR, view: "races", note: "The real Week 1 race day with the bonus round. Use the Race director button at the bottom of the Races tab to try editing (password: webleedadmin). Edits stay in this preview." },
   race: { label: "Race day example", at: () => LOCK + 15 * HOUR, view: "races", note: "Made-up lineups and race times, to show how the Races tab fills in. Use the Race director button at the bottom of the Races tab to try editing (password: webleedadmin). Edits stay in this preview." },
 };
 
@@ -51,7 +52,7 @@ let env = null;
 async function setup(name) {
   const target = SCENARIOS[name].at();
   env = { STANDINGS: new MemoryKV() };
-  const real = (name === "stats" || name === "racestats") && window.STATS_FIXTURE;
+  const real = (name === "stats" || name === "racestats" || name === "week1") && window.STATS_FIXTURE;
   const fetchImpl = async () => new Response(page(real ? window.STATS_FIXTURE.finalRows : sample.rows), { status: 200 });
   // Two hourly runs before the target moment.
   const lastHour = Math.floor(target / HOUR) * HOUR;
@@ -64,6 +65,7 @@ async function setup(name) {
       const at = new Date(LOCK + 20 * HOUR).toISOString();
       await env.STANDINGS.put("races:1:lineup", JSON.stringify({ sitting: window.STATS_FIXTURE.races.sitting, updatedAt: at }));
       for (const [n, results] of Object.entries(window.STATS_FIXTURE.races.tiers)) await env.STANDINGS.put(`races:1:tier:${n}`, JSON.stringify({ results, updatedAt: at }));
+      if (window.STATS_FIXTURE.races.bonus) await env.STANDINGS.put("races:1:bonus", JSON.stringify({ results: window.STATS_FIXTURE.races.bonus, updatedAt: at }));
     }
   }
   if (name === "race") {

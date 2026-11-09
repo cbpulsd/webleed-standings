@@ -15,6 +15,7 @@
 //   GET   /api/admin/tracks/:id/races            -> race day plus who sat out in earlier weeks
 //   PATCH /api/admin/tracks/:id/races/lineup     -> { sitting: { "<sponsor>": "<pilot>" | null } }
 //   PATCH /api/admin/tracks/:id/races/tiers/:n   -> { results: { "<race>": { "<sponsor>": "45.123" | "DNF" | null } } }
+//   PATCH /api/admin/tracks/:id/races/bonus      -> { results: { "<match>": { "<heat>": { "<sponsor>": { "<tier>": "45.123" | "DNF" | null } } } } }
 //
 // The page in /public is served as static files and only reads from /api.
 
@@ -119,7 +120,7 @@ export async function route(request, url, env, ctx, now, deps = {}) {
     if (request.method === "GET" && parts.length === 5) {
       return json({ ...(await racesFor(env, track, now)), satBefore: await satBefore(env, track) }, 200, "no-store");
     }
-    if (request.method === "PATCH" && (parts[5] === "lineup" || parts[5] === "tiers")) {
+    if (request.method === "PATCH" && (parts[5] === "lineup" || parts[5] === "tiers" || parts[5] === "bonus")) {
       const body = await request.json().catch(() => null);
       if (!body) return json({ error: "send JSON" }, 400, "no-store");
       const teams = teamsFor(track);
@@ -128,6 +129,8 @@ export async function route(request, url, env, ctx, now, deps = {}) {
       try {
         if (parts[5] === "lineup" && parts.length === 6) {
           await store.patch("lineup", null, body.sitting, teams, stamp);
+        } else if (parts[5] === "bonus" && parts.length === 6) {
+          await store.patch("bonus", null, body.results, teams, stamp);
         } else if (parts[5] === "tiers" && parts.length === 7) {
           const tier = Number(parts[6]);
           if (!Number.isInteger(tier) || tier < 1 || tier > RACES.tiers) return json({ error: "no such tier" }, 404, "no-store");

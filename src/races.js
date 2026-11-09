@@ -3,6 +3,8 @@
 // Saved by the race director page (in the RaceRoom Durable Object, or KV as a fallback):
 //   lineup     { updatedAt, sitting: { "<sponsor>": "<pilot>" } }
 //   tier <n>   { updatedAt, results: { "<race>": { "<sponsor>": <seconds> | "dnf" } } }
+//   bonus      { updatedAt, results: { "<match>": { "<heat>": { "<sponsor>": { "<tier>": <seconds> | "dnf" } } } } }
+//              match: semi1 (#1 v #4), semi2 (#2 v #3), final (semi winners), third (semi losers)
 // Race times are stored. Within each race the fastest time finishes 1st, and so on;
 // a DNF finishes with no points. Points come from config RACES.points by position.
 //
@@ -13,6 +15,8 @@ import { RACES } from "./config.js";
 
 export const lineupKey = (trackId) => `races:${trackId}:lineup`;
 export const tierKey = (trackId, tier) => `races:${trackId}:tier:${tier}`;
+export const bonusKey = (trackId) => `races:${trackId}:bonus`;
+export const BONUS_MATCHES = ["semi1", "semi2", "final", "third"];
 
 const raceTime = (v) => (v === "dnf" ? "dnf" : typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null);
 
@@ -25,11 +29,12 @@ export function positionsFor(times) {
 
 export async function loadRaceDocs(env, trackId, cfg = RACES) {
   const tiers = Array.from({ length: cfg.tiers }, (_, i) => i + 1);
-  const [lineup, ...tierDocs] = await Promise.all([
+  const [lineup, bonus, ...tierDocs] = await Promise.all([
     env.STANDINGS.get(lineupKey(trackId), "json"),
+    env.STANDINGS.get(bonusKey(trackId), "json"),
     ...tiers.map((t) => env.STANDINGS.get(tierKey(trackId, t), "json")),
   ]);
-  return { lineup: lineup || {}, tiers: Object.fromEntries(tiers.map((t, i) => [t, tierDocs[i] || {}])) };
+  return { lineup: lineup || {}, bonus: bonus || {}, tiers: Object.fromEntries(tiers.map((t, i) => [t, tierDocs[i] || {}])) };
 }
 
 // Each team's pilots, fastest Smash time first (from the track's standings), else roster order.
@@ -58,7 +63,7 @@ export function computeRaces(track, docs, teams, standings, cfg = RACES) {
     list.forEach((e, i) => (e.place = any && e[key] != null ? i + 1 : null));
     return list;
   };
-  const updated = [docs?.lineup?.updatedAt, ...tierIds.map((t) => docs?.tiers?.[t]?.updatedAt)].filter(Boolean).sort().pop() || null;
+  const updated = [docs?.lineup?.updatedAt, docs?.bonus?.updatedAt, ...tierIds.map((t) => docs?.tiers?.[t]?.updatedAt)].filter(Boolean).sort().pop() || null;
 
   const tierResults = tierIds.map((tier) => {
     const results = docs?.tiers?.[tier]?.results || {};
@@ -83,7 +88,7 @@ export function computeRaces(track, docs, teams, standings, cfg = RACES) {
     return { tier, racesRun, entries: rank(entries, "total") };
   });
 
-  const teamTotals = rank(
+  const regular = rank(
     teams.map((t) => {
       const byTier = Object.fromEntries(tierResults.map((ti) => [ti.tier, ti.entries.find((e) => e.sponsor === t.sponsor).total]));
       const vals = Object.values(byTier).filter((v) => v != null);
@@ -93,9 +98,26 @@ export function computeRaces(track, docs, teams, standings, cfg = RACES) {
         draft: teamOrder.get(t.sponsor),
         lineup: lineups[t.sponsor],
         byTier,
-        total: vals.length ? vals.reduce((a, b) => a + b, 0) : null,
+        raceTotal: vals.length ? vals.reduce((a, b) => a + b, 0) : null,
         sitting: sitting[t.sponsor] ?? null,
         smashOrder: order[t.sponsor],
+      };
+    }),
+    "raceTotal"
+  );
+  const regularDone = tierResults.every((t) => t.racesRun === cfg.racesPerTier);
+  const bonus = cfg.bonus ? computeBonus(regular, lineups, docs?.bonus?.results || {}, cfg, regularDone) : null;
+  const bonusOf = new Map((bonus?.places || []).map((p) => [p.sponsor, p]));
+  const teamTotals = rank(
+    regular.map((t) => {
+      const b = bonusOf.get(t.sponsor);
+      const seed = bonus?.seeds.indexOf(t.sponsor);
+      return {
+        ...t,
+        seed: seed != null && seed >= 0 ? seed + 1 : null,
+        bonusPlace: b?.place ?? null,
+        bonus: b ? b.points : null,
+        total: t.raceTotal == null ? null : t.raceTotal + (b?.points || 0),
       };
     }),
     "total"
@@ -109,7 +131,74 @@ export function computeRaces(track, docs, teams, standings, cfg = RACES) {
     updatedAt: updated,
     teams: teamTotals,
     tierResults,
+    bonus,
   };
+}
+
+// The bonus round, from the regular race points (ranked) and its saved heat times.
+export function computeBonus(ranked, lineups, results, cfg = RACES, regularDone = true) {
+  const { teams: size, heats: heatCount, points: placePoints } = cfg.bonus;
+  const seeds = ranked.filter((t) => t.raceTotal != null).slice(0, size).map((t) => t.sponsor);
+  const tierIds = Array.from({ length: cfg.tiers }, (_, i) => i + 1);
+  const heatIds = Array.from({ length: heatCount }, (_, i) => i + 1);
+  const pointsFor = (pos) => (pos == null ? null : pos === 0 ? 0 : cfg.points[pos - 1] ?? 0);
+
+  function play(id, label, a, b) {
+    const sides = [a, b];
+    if (!a || !b) return { id, label, teams: sides, heats: [], totals: null, winner: null, loser: null, complete: false, tied: false };
+    const heats = heatIds.map((h) => {
+      const cells = sides.flatMap((sp) => tierIds.map((tier) => ({ sponsor: sp, tier, pilot: lineups[sp]?.[tier] ?? null, time: raceTime(results[id]?.[h]?.[sp]?.[tier]) })));
+      const pos = positionsFor(cells.map((c) => c.time));
+      const entries = cells.map((c, i) => ({ ...c, position: pos[i], points: pointsFor(pos[i]) }));
+      const score = Object.fromEntries(sides.map((sp) => [sp, entries.filter((e) => e.sponsor === sp && e.points != null).reduce((s, e) => s + e.points, 0)]));
+      return { heat: h, entries, score, run: entries.some((e) => e.time != null), complete: entries.every((e) => e.time != null) };
+    });
+    const totals = Object.fromEntries(sides.map((sp) => [sp, heats.reduce((s, h) => s + h.score[sp], 0)]));
+    const complete = heats.every((h) => h.complete);
+    const tied = complete && totals[a] === totals[b];
+    const winner = complete && !tied ? (totals[a] > totals[b] ? a : b) : null;
+    return { id, label, teams: sides, heats, totals, winner, loser: winner ? (winner === a ? b : a) : null, complete, tied };
+  }
+
+  const ready = seeds.length === size;
+  const semi1 = play("semi1", "Semifinal 1", ready ? seeds[0] : null, ready ? seeds[3] : null);
+  const semi2 = play("semi2", "Semifinal 2", ready ? seeds[1] : null, ready ? seeds[2] : null);
+  const final = play("final", "Final", semi1.winner, semi2.winner);
+  const third = play("third", "3rd place", semi1.loser, semi2.loser);
+  const places = [];
+  if (final.winner) places.push({ place: 1, sponsor: final.winner }, { place: 2, sponsor: final.loser });
+  if (third.winner) places.push({ place: 3, sponsor: third.winner }, { place: 4, sponsor: third.loser });
+  places.forEach((p) => (p.points = placePoints[p.place - 1] ?? 0));
+  return { seeds: ready ? seeds : [], provisional: !regularDone, heats: heatCount, placePoints, matches: [semi1, semi2, final, third], places };
+}
+
+// Bonus heat times: { "<match>": { "<heat>": { "<sponsor>": { "<tier>": time } } } }
+export function applyBonusPatch(doc, patch, teams, cfg = RACES) {
+  const sponsors = new Set(teams.map((t) => t.sponsor));
+  const results = JSON.parse(JSON.stringify(doc?.results || {}));
+  for (const [match, heats] of Object.entries(patch || {})) {
+    if (!BONUS_MATCHES.includes(match)) throw new Error(`no bonus match ${match}`);
+    for (const [heat, bySponsor] of Object.entries(heats || {})) {
+      const h = Number(heat);
+      if (!Number.isInteger(h) || h < 1 || h > cfg.bonus.heats) throw new Error(`no bonus heat ${heat}`);
+      for (const [sponsor, byTier] of Object.entries(bySponsor || {})) {
+        if (!sponsors.has(sponsor)) throw new Error(`unknown team: ${sponsor}`);
+        for (const [tier, v] of Object.entries(byTier || {})) {
+          const t = Number(tier);
+          if (!Number.isInteger(t) || t < 1 || t > cfg.tiers) throw new Error(`no tier ${tier}`);
+          const time = parseRaceTime(v);
+          if (time === undefined) throw new Error(`"${v}" isn't a race time (use seconds like 45.123, or DNF)`);
+          const slot = ((results[match] ||= {})[h] ||= {});
+          if (time === null) { if (slot[sponsor]) delete slot[sponsor][t]; }
+          else (slot[sponsor] ||= {})[t] = time;
+          if (slot[sponsor] && !Object.keys(slot[sponsor]).length) delete slot[sponsor];
+        }
+      }
+      if (results[match][h] && !Object.keys(results[match][h]).length) delete results[match][h];
+    }
+    if (results[match] && !Object.keys(results[match]).length) delete results[match];
+  }
+  return { results };
 }
 
 // Admin edits arrive as patches and are merged into what's saved, so directors

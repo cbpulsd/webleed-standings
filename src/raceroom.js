@@ -4,7 +4,7 @@
 // has the Races tab or race director page open over a WebSocket.
 
 import { RACES } from "./config.js";
-import { applyResultsPatch, applySittingPatch } from "./races.js";
+import { applyBonusPatch, applyResultsPatch, applySittingPatch } from "./races.js";
 
 const tierIds = Array.from({ length: RACES.tiers }, (_, i) => i + 1);
 
@@ -15,12 +15,13 @@ export class RaceRoom {
   }
 
   async docs() {
-    const [lineup, version, ...tiers] = await Promise.all([
+    const [lineup, version, bonus, ...tiers] = await Promise.all([
       this.state.storage.get("lineup"),
       this.state.storage.get("version"),
+      this.state.storage.get("bonus"),
       ...tierIds.map((t) => this.state.storage.get(`tier:${t}`)),
     ]);
-    return { lineup: lineup || {}, tiers: Object.fromEntries(tierIds.map((t, i) => [t, tiers[i] || {}])), version: version || 0 };
+    return { lineup: lineup || {}, bonus: bonus || {}, tiers: Object.fromEntries(tierIds.map((t, i) => [t, tiers[i] || {}])), version: version || 0 };
   }
 
   async fetch(request) {
@@ -45,6 +46,9 @@ export class RaceRoom {
           const key = `tier:${tier}`;
           const next = applyResultsPatch(await this.state.storage.get(key), patch, teams);
           await this.state.storage.put(key, { ...next, updatedAt: at });
+        } else if (kind === "bonus") {
+          const next = applyBonusPatch(await this.state.storage.get("bonus"), patch, teams);
+          await this.state.storage.put("bonus", { ...next, updatedAt: at });
         } else return Response.json({ error: "unknown edit" }, { status: 400 });
       } catch (err) {
         return Response.json({ error: String(err?.message || err) }, { status: 400 });

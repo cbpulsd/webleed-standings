@@ -2,7 +2,7 @@
 // (live updates), otherwise KV (tests and the preview).
 
 import { RACES } from "./config.js";
-import { applyResultsPatch, applySittingPatch, lineupKey, loadRaceDocs, tierKey } from "./races.js";
+import { applyBonusPatch, applyResultsPatch, applySittingPatch, bonusKey, lineupKey, loadRaceDocs, tierKey } from "./races.js";
 
 export function raceStore(env, trackId) {
   if (env.RACES_DO) {
@@ -32,6 +32,9 @@ export function raceStore(env, trackId) {
       } else if (kind === "tier" && tier >= 1 && tier <= RACES.tiers) {
         const next = applyResultsPatch(await env.STANDINGS.get(tierKey(trackId, tier), "json"), patch, teams);
         await env.STANDINGS.put(tierKey(trackId, tier), JSON.stringify({ ...next, updatedAt: at }));
+      } else if (kind === "bonus") {
+        const next = applyBonusPatch(await env.STANDINGS.get(bonusKey(trackId), "json"), patch, teams);
+        await env.STANDINGS.put(bonusKey(trackId), JSON.stringify({ ...next, updatedAt: at }));
       } else throw new Error("unknown edit");
       return { ok: true };
     },

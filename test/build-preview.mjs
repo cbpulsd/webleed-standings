@@ -69,7 +69,7 @@ ${css}
     if (sc.view === "racestats") setTimeout(() => document.getElementById("viewRaceStatsBtn")?.click(), 300);
   }
   bar.addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) boot(b.dataset.k); });
-  boot(${statsFixture ? '"racestats"' : '"live"'});
+  boot(${statsFixture ? '"week1"' : '"live"'});
 })();
 </script>
 `;
