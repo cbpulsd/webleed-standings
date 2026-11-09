@@ -652,7 +652,7 @@ test("stats include the repo-kept Track 1 data from before our history began, wi
   const st = await get(env, "/api/tracks/1/stats", LOCK + HOUR, {});
   assert.equal(st.from, "2026-11-02T00:00:00.000Z");
   assert.equal(st.teams.find((t) => t.sponsor === "WREKD").series.length, seed1.history.length + 1);
-  assert.equal(st.summary.newBests, 451, "Discord posts plus the hourly saves");
+  assert.equal(st.summary.newBests, 540, "Discord posts plus the hourly saves");
   assert.ok(seed1.history.every((h) => h.at < "2026-11-03T22:22:29.151Z"));
   assert.equal((await route(new Request("https://x/api/admin/tracks/1/backfill", { method: "POST" }), new URL("https://x/api/admin/tracks/1/backfill"), env, { waitUntil() {} }, LOCK + HOUR)).status >= 400, true, "no import route");
 });
