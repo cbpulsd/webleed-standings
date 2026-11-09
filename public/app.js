@@ -648,7 +648,7 @@
         </tbody></table></section>`;
 
     el.innerHTML = `
-      <p class="races-note">${esc(raceDayText(d))} · ${d.tiers} tiers, ${d.racesPerTier} races each. Points per race go ${d.points[0]} down to ${d.points[d.points.length - 1]} by finishing place in the tier. Times of ${PLACEHOLDER_TIME}s or more (like a 999 for a heat not flown) still finish last but aren't counted as heat times below.</p>
+      <p class="races-note">${esc(raceDayText(d))} · ${d.tiers} tiers, ${d.racesPerTier} races each. Points per race go ${d.points[0]} down to ${d.points[d.points.length - 1]} by finishing place in the tier. Times of ${PLACEHOLDER_TIME}s or more (like a 999 for a heat not flown) still finish last but aren't counted as heat times below. Only the tier races count here: bonus round heats and bonus points are left out.</p>
 
       <section class="chart-card" aria-label="Points by tier">
         <div class="sec-head"><h2>Points by tier</h2><span>where each team's race points came from</span></div>
@@ -682,9 +682,10 @@
     if (!box) return;
     const W = Math.max(300, box.clientWidth || 800), narrow = W < 520;
     const m = { l: narrow ? 96 : 150, r: 44, t: 4, b: 22 }, rowH = 28, barH = 18;
-    const teams = d.teams.filter((t) => t.total != null);
+    // Tier races only: bonus round points are left out of Race Stats.
+    const teams = d.teams.filter((t) => t.raceTotal != null).sort((a, b) => b.raceTotal - a.raceTotal || a.draft - b.draft);
     const H = m.t + m.b + teams.length * rowH;
-    const max = Math.max(1, ...teams.map((t) => t.total));
+    const max = Math.max(1, ...teams.map((t) => t.raceTotal));
     const step = [10, 20, 25, 50, 100].find((k) => max / k <= (narrow ? 4 : 8)) || 200;
     const x1 = Math.ceil(max / step) * step;
     const X = (v) => (v / x1) * (W - m.l - m.r);
@@ -703,7 +704,7 @@
           x += w;
           return out;
         }).join("");
-        return `<text class="tn" x="${m.l - 10}" y="${y + barH / 2 + 4}" text-anchor="end">${esc(short(t.sponsor, narrow ? 11 : 20))}</text>${segs}<text class="sp" x="${x + 4}" y="${y + barH / 2 + 4}">${t.total}</text>`;
+        return `<text class="tn" x="${m.l - 10}" y="${y + barH / 2 + 4}" text-anchor="end">${esc(short(t.sponsor, narrow ? 11 : 20))}</text>${segs}<text class="sp" x="${x + 4}" y="${y + barH / 2 + 4}">${t.raceTotal}</text>`;
       }).join("")}
     </svg><div class="tip" id="tptip" hidden></div>`;
     const tip = box.querySelector("#tptip");
