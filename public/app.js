@@ -563,6 +563,7 @@
         tier: tr.tier, pilot: e.pilot, team: e.sponsor, points: e.total, heats, real, mean,
         sd: real.length >= 4 ? Math.sqrt(real.reduce((a, b) => a + (b - mean) ** 2, 0) / real.length) : null,
         best: real.length ? Math.min(...real) : null,
+        worst: real.length ? Math.max(...real) : null,
         wins: heats.filter((h) => h.pos === 1).length,
         avgFinish: finishes.length ? finishes.reduce((a, b) => a + b, 0) / finishes.length : null,
         smash: smash.get(e.pilot) ?? null,
@@ -618,10 +619,10 @@
         ${list("Fastest heats", "each pilot's best 3-lap heat", ["Race", "Time"], s.fastest.map((p) => `<tr><td>${who(p)}</td><td class="num">${p.race}</td><td class="num">${secs(p.time)}</td></tr>`).join(""), "No heats yet")}
       </div>
       <div class="two-col">
-        ${list("Most consistent", "smallest spread across heats", ["Average", "Spread"], s.consistent.map((p) => `<tr><td>${who(p)}</td><td class="num">${secs(p.mean)}</td><td class="num">±${p.sd.toFixed(2)}</td></tr>`).join(""), "Needs four heats per pilot")}
+        ${list("Most consistent", "smallest spread across heats", ["Average", "Spread", "Range"], s.consistent.map((p) => `<tr><td>${who(p)}</td><td class="num">${secs(p.mean)}</td><td class="num">±${p.sd.toFixed(2)}</td><td class="num" title="Best ${secs(p.best)} · worst ${secs(p.worst)}">±${((p.worst - p.best) / 2).toFixed(2)}</td></tr>`).join(""), "Needs four heats per pilot")}
         ${list("Race-day overperformers", "best heat faster than their Smash time", ["Best heat", "Beat by"], s.over.map((p) => `<tr><td>${who(p)}</td><td class="num">${secs(p.best)}<small>Smash ${secs(p.smash)}</small></td><td class="num">−${secs(p.beat, 2)}s</td></tr>`).join(""), "Nobody beat their Smash time")}
       </div>
-      <p class="sub">Race wins only lists pilots who won 2 or more heats. Spread is the standard deviation of a pilot's heat times, from at least four heats.</p>`;
+      <p class="sub">Race wins only lists pilots who won 2 or more heats. In Most consistent, Spread is the standard deviation of a pilot's heat times (how far a typical heat lands from their average) and sets the order; Range is half the gap between their best and worst heat. Both need at least four heats.</p>`;
     drawTierPoints(d);
   }
 
