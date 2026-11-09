@@ -784,3 +784,21 @@ test("Track 2: opens after Track 1 locks, counts only Cetus PRO times, locks Sat
   assert.equal(pilots.find((p) => p.name === "Blastaa").time, 115.3, "(Beta Tester) tag still matches");
   assert.equal(pilots.find((p) => p.name === "caleb.").posted, false, "a Tiny Hawk time doesn't count");
 });
+
+test("a quad the game feed only gives by id is learned once from the public page", async () => {
+  const env = { STANDINGS: new MemoryKV() };
+  const t2 = TRACKS.find((t) => t.id === 2);
+  const site = fakeSite([[1, "115.300", "Blastaa", "Cetus PRO"], [2, "110.000", "caleb.", "Tiny Hawk"]]);
+  site.game = true; // the fake game endpoint sends model id 48 for anything that isn't a Hummingbird RS
+  const now = Date.parse("2026-11-09T06:00:00Z");
+  let r = await syncTrack(env, t2, now, { force: true, fetchImpl: site.fetch });
+  assert.equal(r.record.source, "game");
+  assert.deepEqual(await env.STANDINGS.get("models", "json"), { 48: "Cetus PRO" }, "learned from Blastaa's row on the page");
+  const pilots = (await get(env, "/api/tracks/2", now + 60_000, { fetchImpl: site.fetch })).standings.teams.flatMap((t) => t.pilots);
+  assert.equal(pilots.find((p) => p.name === "Blastaa").time, 115.3);
+  // Once known, the page isn't read again.
+  const pageCalls = site.calls;
+  r = await syncTrack(env, t2, now + 5 * 60_000, { force: true, fetchImpl: site.fetch });
+  assert.equal(site.calls, pageCalls);
+  assert.equal(r.record.rows.find((x) => x.name === "Blastaa").model, "Cetus PRO");
+});

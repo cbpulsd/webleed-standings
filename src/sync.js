@@ -23,6 +23,15 @@ export function trackStatus(track, record, now) {
   return "live";
 }
 
+// Quad names learned from the public page, by Velocidrone model id (see fetchLeaderboard).
+const MODELS_KEY = "models";
+async function fetchRows(env, track, fetchImpl) {
+  const models = (await env.STANDINGS.get(MODELS_KEY, "json")) || {};
+  const result = await fetchLeaderboard(track.leaderboardUrl, fetchImpl, { quad: track.quad || null, models });
+  if (result.learned) await env.STANDINGS.put(MODELS_KEY, JSON.stringify({ ...models, ...result.learned }));
+  return result;
+}
+
 // The hourly timer: refresh every live track, lock any that have reached their lock time.
 export async function runSchedule(env, now, deps = {}) {
   const results = [];
@@ -47,7 +56,7 @@ export async function syncTrack(env, track, now, { force = false, staleMs = 0, f
 
   if (!force && record && now - Date.parse(record.fetchedAt) < staleMs) return { action: "skip-fresh", record };
 
-  const { rows, source, sourceError } = await fetchLeaderboard(track.leaderboardUrl, fetchImpl);
+  const { rows, source, sourceError } = await fetchRows(env, track, fetchImpl);
   const fetchedAt = new Date(now).toISOString();
   const next = { trackId: track.id, status: "live", fetchedAt, rowCount: rows.length, rows, source, sourceError };
   // A refresh that was still running when the lock happened must not overwrite it.
@@ -73,7 +82,7 @@ export async function lockTrack(env, track, record, now, { fetchImpl, attempts =
   if (allowFetch && inWindow) {
     for (let i = 0; i < attempts && !rows; i++) {
       try {
-        ({ rows, source } = await fetchLeaderboard(track.leaderboardUrl, fetchImpl));
+        ({ rows, source } = await fetchRows(env, track, fetchImpl));
         fetchedAt = new Date(now).toISOString();
         lockMethod = "final-fetch";
       } catch (err) {
