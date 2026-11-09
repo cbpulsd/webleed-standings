@@ -570,7 +570,7 @@
     }));
     return {
       pilots,
-      wins: pilots.filter((p) => p.wins).sort((a, b) => b.wins - a.wins || a.tier - b.tier),
+      wins: pilots.filter((p) => p.wins >= 2).sort((a, b) => b.wins - a.wins || a.tier - b.tier),
       // Each pilot's single best heat, so one pilot can't fill the list.
       fastest: pilots.filter((p) => p.best != null).map((p) => ({ ...p, race: p.heats.find((h) => h.time === p.best).race, time: p.best })).sort((a, b) => a.time - b.time).slice(0, 10),
       consistent: pilots.filter((p) => p.sd != null).sort((a, b) => a.sd - b.sd).slice(0, 10),
@@ -614,14 +614,14 @@
       </section>
 
       <div class="two-col">
-        ${list("Race wins", "heats won", ["Wins"], s.wins.map((p) => `<tr><td>${who(p)}</td><td class="num">${p.wins}</td></tr>`).join(""), "No wins yet")}
+        ${list("Race wins", "pilots with 2 or more", ["Wins"], s.wins.map((p) => `<tr><td>${who(p)}</td><td class="num">${p.wins}</td></tr>`).join(""), "Nobody has won more than one heat")}
         ${list("Fastest heats", "each pilot's best 3-lap heat", ["Race", "Time"], s.fastest.map((p) => `<tr><td>${who(p)}</td><td class="num">${p.race}</td><td class="num">${secs(p.time)}</td></tr>`).join(""), "No heats yet")}
       </div>
       <div class="two-col">
         ${list("Most consistent", "smallest spread across heats", ["Average", "Spread"], s.consistent.map((p) => `<tr><td>${who(p)}</td><td class="num">${secs(p.mean)}</td><td class="num">±${p.sd.toFixed(2)}</td></tr>`).join(""), "Needs four heats per pilot")}
         ${list("Race-day overperformers", "best heat faster than their Smash time", ["Best heat", "Beat by"], s.over.map((p) => `<tr><td>${who(p)}</td><td class="num">${secs(p.best)}<small>Smash ${secs(p.smash)}</small></td><td class="num">−${secs(p.beat, 2)}s</td></tr>`).join(""), "Nobody beat their Smash time")}
       </div>
-      <p class="sub">Spread is the standard deviation of a pilot's heat times, from at least four heats.</p>`;
+      <p class="sub">Race wins only lists pilots who won 2 or more heats. Spread is the standard deviation of a pilot's heat times, from at least four heats.</p>`;
     drawTierPoints(d);
   }
 
