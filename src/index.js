@@ -19,7 +19,7 @@
 //
 // The page in /public is served as static files and only reads from /api.
 
-import { ADMIN_PASSWORD_SHA256, ALIASES, LATE_LOCK_AFTER_MINUTES, RACES, REFRESH_MINUTES, LEAGUE, TEAMS, NO_VISIT_REFRESH_BEFORE_LOCK_MINUTES, SEASON, STALE_MINUTES, TRACKS } from "./config.js";
+import { ADMIN_PASSWORD_SHA256, ALIASES, LATE_LOCK_AFTER_MINUTES, RACES, REFRESH_MINUTES, SEASON_POINTS, LEAGUE, TEAMS, NO_VISIT_REFRESH_BEFORE_LOCK_MINUTES, SEASON, STALE_MINUTES, TRACKS } from "./config.js";
 import { applyOverrides, computeStandings, norm, quadAllowed } from "./standings.js";
 import { computeRaces } from "./races.js";
 import { raceStore } from "./racestore.js";
@@ -245,20 +245,62 @@ export async function route(request, url, env, ctx, now, deps = {}) {
   return json({ error: "not found" }, 404, "no-store");
 }
 
-// Season table. Points live in KV under "overall":
-//   { updatedAt, points: { "<sponsor>": { "<trackId>": { smash: 12, race: 8 } } } }
-// Nothing writes it yet; missing points come back as null.
+// Season table. Each week's points are worked out from that track:
+//   Smash: place in the locked team standings -> SEASON_POINTS (10 for 1st ... 1 for 10th)
+//   Race:  place by tier race points once every tier has finished -> SEASON_POINTS,
+//          plus the bonus round's 3/2/1/0 for the top four once it's done.
+// Teams level on points share the higher place. A value saved in KV under "overall"
+// ({ points: { "<sponsor>": { "<week>": { smash, race } } } }) replaces the worked-out one.
+const placePoints = (list, key) => {
+  const out = new Map();
+  for (const t of list) {
+    if (t[key] == null) continue;
+    const place = 1 + list.filter((o) => o[key] != null && o[key] > t[key]).length;
+    out.set(t.sponsor, SEASON_POINTS[place - 1] ?? 0);
+  }
+  return out;
+};
+
+async function weekPoints(env, track, now) {
+  if (!track.leaderboardUrl) return null;
+  const record = await getRecord(env, track.id);
+  const smash = new Map();
+  if (record?.status === "locked" && record.standings) {
+    const s = applyOverrides(record.standings, overridesFor(track));
+    // Lower total is better: flip the sign so placePoints ranks fastest first.
+    for (const [k, v] of placePoints(s.teams.map((t) => ({ sponsor: t.sponsor, score: -t.total })), "score")) smash.set(k, v);
+  }
+  const race = new Map();
+  const bonus = new Map();
+  const r = await racesFor(env, track, now);
+  const done = r.tierResults.every((t) => t.racesRun === r.racesPerTier);
+  const bonusDone = !r.bonus || r.bonus.places.length === r.bonus.seeds.length;
+  if (done && bonusDone) {
+    for (const [k, v] of placePoints(r.teams, "raceTotal")) race.set(k, v);
+    for (const p of r.bonus?.places || []) bonus.set(p.sponsor, p.points);
+  }
+  return { smash, race, bonus };
+}
+
 async function overall(env, now) {
   const saved = (await env.STANDINGS.get("overall", "json")) || {};
   const points = saved.points || {};
   const weeks = TRACKS.map((t) => ({ id: t.id, name: t.name, label: `Week ${t.id}` }));
+  const computed = Object.fromEntries(await Promise.all(TRACKS.map(async (t) => [t.id, await weekPoints(env, t, now).catch((e) => (console.error(e), null))])));
   const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
   const teams = TEAMS.map((t, order) => {
     const byWeek = {};
     let total = null;
     for (const w of weeks) {
       const p = points[t.sponsor]?.[w.id] || {};
-      const cell = { smash: num(p.smash), race: num(p.race) };
+      const c = computed[w.id];
+      const racePlace = c?.race.get(t.sponsor);
+      const bonus = c?.bonus.get(t.sponsor) ?? null;
+      const cell = {
+        smash: num(p.smash) ?? c?.smash.get(t.sponsor) ?? null,
+        race: num(p.race) ?? (racePlace != null ? racePlace + (bonus || 0) : null),
+        raceBonus: num(p.race) == null && racePlace != null ? bonus : null,
+      };
       for (const v of [cell.smash, cell.race]) if (v != null) total = (total ?? 0) + v;
       byWeek[w.id] = cell;
     }
@@ -267,8 +309,8 @@ async function overall(env, now) {
   const anyPoints = teams.some((t) => t.total != null);
   // Most points first once any exist; until then, draft order.
   teams.sort((a, b) => (anyPoints ? (b.total ?? -Infinity) - (a.total ?? -Infinity) : 0) || a.order - b.order);
-  teams.forEach((t, i) => { t.position = anyPoints && t.total != null ? i + 1 : null; delete t.order; });
-  return { weeks, teams, updatedAt: saved.updatedAt || null };
+  teams.forEach((t, i) => { t.position = anyPoints && t.total != null ? 1 + teams.filter((o) => (o.total ?? -Infinity) > t.total).length : null; delete t.order; });
+  return { weeks, points: SEASON_POINTS, teams, updatedAt: saved.updatedAt || null };
 }
 
 // Race director sign-in pass: "<expiry ms>.<HMAC-SHA256 of it>", keyed on the password

@@ -63,6 +63,11 @@ export const RACES = {
   bonus: { teams: 4, heats: 3, points: [3, 2, 1, 0] },
 };
 
+// Season table points each week, by place: 1st 10 down to 10th 1, once for Smash
+// (locked team standings) and once for Races (tier race points, before bonus).
+// The bonus round's 3/2/1/0 is then added to the Race points of the top four.
+export const SEASON_POINTS = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
+
 // Season roster: captain plus four drafted pilots per team.
 export const TEAMS = [
   { sponsor: "EMAX USA", captain: "Raimon Shaigne", pilots: ["FPVRossco", "FakeitFPV", "burnerXIII", "BallHawk"] },

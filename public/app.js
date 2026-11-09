@@ -96,7 +96,7 @@
     if (isOverall()) {
       $("title").textContent = "Overall Standings";
       document.title = "Season 5 Overall Standings";
-      $("sub").textContent = "Season points for each team: Smash points and Race points for every week. Points are added after each week's races.";
+      $("sub").textContent = "Season points for each team. Each week, Smash and Races each give 10 points for 1st down to 1 for 10th, and the bonus round adds 3, 2, 1 or 0 to the top four's Race points. A week's Smash points come in when its track locks, and its Race points once every race is in.";
       return;
     }
     const t = currentTrack();
@@ -150,7 +150,7 @@
     const body = d.teams
       .map((t) => `<tr>
         <th class="team-col" scope="row"><div class="ocell">${t.position != null ? `<span class="opos">${t.position}</span>` : ""}<span class="oname"><b>Team ${esc(t.sponsor)}</b><small>Capt ${esc(t.captain)}</small></span></div></th>
-        ${d.weeks.map((w) => `<td class="num wk-start">${pts(t.weeks[w.id]?.smash)}</td><td class="num">${pts(t.weeks[w.id]?.race)}</td>`).join("")}
+        ${d.weeks.map((w) => { const c = t.weeks[w.id] || {}; return `<td class="num wk-start">${pts(c.smash)}</td><td class="num"${c.raceBonus ? ` title="${c.race - c.raceBonus} for race place + ${c.raceBonus} bonus round"` : ""}>${pts(c.race)}${c.raceBonus ? `<small class="bonus-note">+${c.raceBonus}</small>` : ""}</td>`; }).join("")}
         <td class="num tot">${pts(t.total)}</td>
       </tr>`)
       .join("");

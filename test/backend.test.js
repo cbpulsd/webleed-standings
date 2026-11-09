@@ -383,7 +383,7 @@ test("overall table lists every team and week, with empty points for now", async
   assert.equal(body.teams.length, 10);
   assert.deepEqual(body.teams.map((t) => t.sponsor), TEAMS.map((t) => t.sponsor), "draft order until points exist");
   assert.ok(body.teams.every((t) => t.total === null && t.position === null));
-  assert.deepEqual(body.teams[0].weeks[1], { smash: null, race: null });
+  assert.deepEqual(body.teams[0].weeks[1], { smash: null, race: null, raceBonus: null });
 });
 
 test("overall table ranks by total once points are saved", async () => {
@@ -396,7 +396,7 @@ test("overall table ranks by total once points are saved", async () => {
   assert.equal(body.teams[0].total, 18);
   assert.equal(body.teams[0].position, 1);
   assert.equal(body.teams[1].sponsor, "EMAX USA");
-  assert.deepEqual(body.teams[1].weeks[1], { smash: 6, race: null }, "bad values are ignored");
+  assert.deepEqual(body.teams[1].weeks[1], { smash: 6, race: null, raceBonus: null }, "bad values are ignored");
   assert.equal(body.teams[2].position, null);
 });
 
@@ -734,4 +734,32 @@ test(`bonus round edits go through the director route (${store})`, async () => {
   const { raceStore } = await import("../src/racestore.js");
   assert.deepEqual((await raceStore(env, 1).docs()).bonus.results, { semi1: { 1: { DamagD: { 1: 74.792 } } } });
   assert.equal((await req(env, "PATCH", "/api/admin/tracks/1/races/bonus", {}, { results: {} })).status, 403);
+});
+
+test("overall: Week 1 points worked out from the locked Smash standings and the full race day", async () => {
+  const { readFileSync } = await import("node:fs");
+  const w = JSON.parse(readFileSync(new URL("./fixtures/week1-races.json", import.meta.url), "utf8"));
+  const smashTotals = { Happymodel: 414.844, MEPSKING: 416.569, DamagD: 416.642, "EMAX USA": 421.694, NewBeeDrone: 437.795, WREKD: 439.481, "Fractal Engineering": 452.078, Velocidrone: 455.88, BETAFPV: 465.56, RadioMaster: 466.413 };
+  const standings = { teams: Object.entries(smashTotals).map(([sponsor, total], i) => ({ sponsor, total, position: i + 1, pilots: w.order[sponsor].map((name) => ({ name, posted: true, time: 80 })) })) };
+  const env = { STANDINGS: new MemoryKV() };
+  await env.STANDINGS.put("track:1", JSON.stringify({ status: "locked", lockedAt: TRACKS[0].locksAt, fetchedAt: TRACKS[0].locksAt, rows: [], standings, teams: TEAMS }));
+  const at = "2026-11-09T01:00:00Z";
+  await env.STANDINGS.put("races:1:lineup", JSON.stringify({ sitting: w.sitting, updatedAt: at }));
+  for (const [n, results] of Object.entries(w.tiers)) await env.STANDINGS.put(`races:1:tier:${n}`, JSON.stringify({ results, updatedAt: at }));
+
+  // Races done but the bonus round isn't: no Race points yet, Smash points are in.
+  let body = await get(env, "/api/overall", LOCK + 30 * HOUR, {});
+  const wk = (b, sp) => b.teams.find((t) => t.sponsor === sp).weeks[1];
+  assert.deepEqual(wk(body, "Happymodel"), { smash: 10, race: null, raceBonus: null });
+  assert.equal(wk(body, "RadioMaster").smash, 1);
+
+  await env.STANDINGS.put("races:1:bonus", JSON.stringify({ results: w.bonus, updatedAt: at }));
+  body = await get(env, "/api/overall", LOCK + 30 * HOUR, {});
+  const table = Object.fromEntries(body.teams.map((t) => [t.sponsor, [t.weeks[1].smash, t.weeks[1].race, t.weeks[1].raceBonus, t.total, t.position]]));
+  assert.deepEqual(table, {
+    Happymodel: [10, 11, 2, 21, 1], DamagD: [8, 13, 3, 21, 1], MEPSKING: [9, 9, 1, 18, 3], "EMAX USA": [7, 7, 0, 14, 4],
+    NewBeeDrone: [6, 5, null, 11, 5], "Fractal Engineering": [4, 6, null, 10, 6], WREKD: [5, 4, null, 9, 7],
+    Velocidrone: [3, 1, null, 4, 8], BETAFPV: [2, 2, null, 4, 8], RadioMaster: [1, 3, null, 4, 8],
+  });
+  assert.deepEqual(body.teams.slice(0, 2).map((t) => t.sponsor), ["Happymodel", "DamagD"], "level on points: draft order");
 });
