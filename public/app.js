@@ -278,15 +278,15 @@
         <tbody>${d.teams.map((t) => `<tr>
           <th class="team-col" scope="row"><div class="ocell">${place(t.place)}<span class="oname"><b>Team ${esc(t.sponsor)}</b><small>Capt ${esc(t.captain)}</small></span></div></th>
           ${tiers.map((ti) => `<td class="num wk-start">${pts(t.byTier[ti])}</td>`).join("")}
-          ${hasBonus ? `<td class="num wk-start" title="${t.bonusPlace ? `${ordinal(t.bonusPlace)} in the bonus round` : t.seed ? `Seed #${t.seed} in the bonus round` : "Not in the bonus round"}">${t.bonus != null ? "+" + t.bonus : t.seed ? `<span class="tbd">#${t.seed}</span>` : ""}</td>` : ""}
+          ${hasBonus ? `<td class="num wk-start" title="${t.bonusPlace ? `${ordinal(t.bonusPlace)} in the bonus round: +${t.bonus} to this week's Race points on the Overall table` : t.seed ? `Seed #${t.seed} in the bonus round` : "Not in the bonus round"}">${t.bonus != null ? "+" + t.bonus : t.seed ? `<span class="tbd">#${t.seed}</span>` : ""}</td>` : ""}
           <td class="num tot">${pts(t.total)}</td>
           <td class="wk-start sit">${t.sitting ? esc(t.sitting) : '<span class="tbd">TBD</span>'}</td>
         </tr>`).join("")}</tbody>
-      </table></div>`;
+      </table></div>${hasBonus ? `<p class="sub">Total is the tier races only. Bonus round points aren't added here; they go on top of the team's Race points for the week on the Overall table.</p>` : ""}`;
   }
 
   // ---------- bonus round ----------
-  const bonusIntro = (b) => `Top ${b.seeds.length || 4} teams by race points. #1 v #4 and #2 v #3 fly ${b.heats} heats with all four racers (eight pilots a heat, ${b.heatPoints[0]} points for 1st down to ${b.heatPoints[b.heatPoints.length - 1]} for ${ordinal(b.heatPoints.length)}); the winners then fly ${b.heats} heats for 1st and 2nd, the losers for 3rd and 4th. Bonus race points: ${b.placePoints.map((p, i) => `${ordinal(i + 1)} +${p}`).join(" · ")}.`;
+  const bonusIntro = (b) => `Top ${b.seeds.length || 4} teams by race points. #1 v #4 and #2 v #3 fly ${b.heats} heats with all four racers (eight pilots a heat, ${b.heatPoints[0]} points for 1st down to ${b.heatPoints[b.heatPoints.length - 1]} for ${ordinal(b.heatPoints.length)}); the winners then fly ${b.heats} heats for 1st and 2nd, the losers for 3rd and 4th. Bonus points, added to the team's Race points for the week on the Overall table: ${b.placePoints.map((p, i) => `${ordinal(i + 1)} +${p}`).join(" · ")}.`;
   const bonusMeta = (b) => (!b?.seeds?.length ? "after the tiers" : b.places.length === 4 ? `Won by Team ${esc(b.places[0].sponsor)}` : b.matches.some((m) => m.heats.some((h) => h.run)) ? "in progress" : "seeds set");
   function bonusPlaces(b) {
     if (!b.places.length) return "";

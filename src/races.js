@@ -117,7 +117,9 @@ export function computeRaces(track, docs, teams, standings, cfg = RACES) {
         seed: seed != null && seed >= 0 ? seed + 1 : null,
         bonusPlace: b?.place ?? null,
         bonus: b ? b.points : null,
-        total: t.raceTotal == null ? null : t.raceTotal + (b?.points || 0),
+        // The week's race total is tier races only. Bonus round points are added to
+        // the team's Race points for the week on the season table, not here.
+        total: t.raceTotal,
       };
     }),
     "total"

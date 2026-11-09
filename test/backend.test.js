@@ -719,8 +719,9 @@ test("bonus round: Week 1 top four, semis, final and 3rd place, 3/2/1/0 added to
   assert.deepEqual(m.third.totals, { MEPSKING: 57, "EMAX USA": 51 });
   assert.deepEqual(m.final.heats.map((h) => h.score.DamagD), [19, 21, 19], "heat 2 is 21-15 by the times");
   assert.deepEqual(r.bonus.places.map((p) => [p.place, p.sponsor, p.points]), [[1, "DamagD", 3], [2, "Happymodel", 2], [3, "MEPSKING", 1], [4, "EMAX USA", 0]]);
+  // The race-day total stays tier races only; the bonus is added on the season table.
   assert.deepEqual(r.teams.slice(0, 5).map((t) => [t.sponsor, t.raceTotal, t.bonus, t.total]), [
-    ["DamagD", 222, 3, 225], ["Happymodel", 219, 2, 221], ["MEPSKING", 208, 1, 209], ["EMAX USA", 206, 0, 206], ["Fractal Engineering", 200, null, 200],
+    ["DamagD", 222, 3, 222], ["Happymodel", 219, 2, 219], ["MEPSKING", 208, 1, 208], ["EMAX USA", 206, 0, 206], ["Fractal Engineering", 200, null, 200],
   ]);
   // Every bonus heat: 8 pilots scoring 8 down to 1.
   for (const x of r.bonus.matches) for (const h of x.heats) assert.deepEqual(h.entries.map((e) => e.points).sort((a, b) => b - a), [8, 7, 6, 5, 4, 3, 2, 1]);
