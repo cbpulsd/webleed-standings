@@ -600,14 +600,14 @@
 
       <section class="chart-card" aria-label="Points by tier">
         <div class="sec-head"><h2>Points by tier</h2><span>where each team's race points came from</span></div>
-        <div class="tier-key">${d.tierResults.map((t) => `<span><i style="background:var(--t${t.tier})"></i>Tier ${t.tier}</span>`).join("")}</div>
+        <div class="tier-key">${d.tierResults.map((t) => `<span><i style="background:var(--s${t.tier})"></i>Tier ${t.tier}</span>`).join("")}</div>
         <div class="chart-box" id="tierPointsChart"></div>
       </section>
 
       <section class="chart-card" aria-label="Tier MVPs">
         <div class="sec-head"><h2>Tier MVPs</h2><span>most points in each tier</span></div>
         <div class="tier-grid">${s.mvps.map((m) => `<div class="tier-card">
-          <h3><i style="background:var(--t${m.tier})"></i>Tier ${m.tier}</h3>
+          <h3><i style="background:var(--s${m.tier})"></i>Tier ${m.tier}</h3>
           <ol>${m.top.map((p, i) => `<li><span>${i + 1}. ${esc(p.pilot)}<small>${esc(p.team)}</small></span><b>${p.points} pts</b></li>`).join("") || "<li>No results yet</li>"}</ol>
           ${m.top[0] ? `<p class="sub">${m.top[0].wins} win${m.top[0].wins === 1 ? "" : "s"} · average finish ${m.top[0].avgFinish.toFixed(1)}</p>` : ""}
         </div>`).join("")}</div>
@@ -647,7 +647,7 @@
         const segs = tiers.map((ti) => {
           const v = t.byTier[ti] || 0, w = X(v);
           const pilot = t.lineup?.[ti] || "";
-          const out = v ? `<rect class="seg" x="${x.toFixed(1)}" y="${y}" width="${Math.max(0, w - 2).toFixed(1)}" height="${barH}" rx="2" fill="var(--t${ti})" data-tip="Team ${esc(t.sponsor)}|Tier ${ti}|${esc(pilot)}|${v}"/>` : "";
+          const out = v ? `<rect class="seg" x="${x.toFixed(1)}" y="${y}" width="${Math.max(0, w - 2).toFixed(1)}" height="${barH}" rx="2" fill="var(--s${ti})" data-tip="Team ${esc(t.sponsor)}|Tier ${ti}|${esc(pilot)}|${v}"/>` : "";
           x += w;
           return out;
         }).join("");
