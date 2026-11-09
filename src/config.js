@@ -75,13 +75,7 @@ export const TEAMS = [
 // League-set times that replace what Velocidrone lists, by track and roster name.
 // `since`: the override applies to saves from then on (stats history included).
 export const TIME_OVERRIDES = {
-  1: {
-    AyyyKayyy: {
-      time: 72.98,
-      since: "2026-11-03T21:00:00Z",
-      note: "Velocidrone dropped his 72.980 on Sat Nov 7 (8–9 PM ET) and listed 76.095 at the lock; the league restored 72.980.",
-    },
-  },
+  // e.g. 1: { AyyyKayyy: { time: 72.98, since: "2026-11-03T21:00:00Z", note: "why" } }
 };
 
 // Roster name -> Velocidrone name, only where they differ beyond capitals, spaces,

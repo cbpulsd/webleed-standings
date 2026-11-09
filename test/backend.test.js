@@ -663,9 +663,11 @@ test("stats: tiers within each team and draft spot vs this week", async () => {
   assert.ok(st.sandbaggers.every((m) => m.moved === m.draftPlace - m.weekPlace));
 });
 
-test("league-set time: AyyyKayyy's 72.980 replaces Velocidrone's slower listing everywhere", async () => {
+test("league-set times replace Velocidrone's slower listing (none are set right now)", async () => {
   const { applyOverrides, overrideSnapshot, computeStandings } = await import("../src/standings.js");
-  const { TIME_OVERRIDES, ALIASES } = await import("../src/config.js");
+  const { ALIASES, TIME_OVERRIDES: LIVE } = await import("../src/config.js");
+  assert.deepEqual(LIVE, {}, "AyyyKayyy's 72.980 override was withdrawn on Nov 8");
+  const TIME_OVERRIDES = { 1: { AyyyKayyy: { time: 72.98, since: "2026-11-03T21:00:00Z", note: "test" } } };
   const fractal = TEAMS.find((t) => t.captain === "AyyyKayyy");
   const rows = [fractal.captain, ...fractal.pilots].map((n, i) => ({ rank: i + 1, name: n, time: n === "AyyyKayyy" ? 76.095 : 80 + i, model: "Hummingbird RS" }));
   const raw = computeStandings(rows, [fractal], ALIASES, TRACKS[0].quad);
