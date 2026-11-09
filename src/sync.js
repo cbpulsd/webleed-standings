@@ -18,6 +18,7 @@ export const standingsFor = (track, rows) => applyOverrides(computeStandings(row
 export function trackStatus(track, record, now) {
   if (record?.status === "locked") return "locked";
   if (!track.leaderboardUrl) return "upcoming";
+  if (track.opensAt && now < Date.parse(track.opensAt)) return "upcoming";
   if (now >= lockTime(track)) return "locking";
   return "live";
 }

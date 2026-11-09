@@ -6,7 +6,7 @@ import { computeStandings } from "../src/standings.js";
 import { lockTrack, runSchedule, syncTrack } from "../src/sync.js";
 import { route } from "../src/index.js";
 import { ALIASES, TEAMS, TRACKS } from "../src/config.js";
-import { encrypt } from "../src/gameapi.js";
+import { decrypt, encrypt } from "../src/gameapi.js";
 import { RaceRoom } from "../src/raceroom.js";
 import { parseRaceTime, positionsFor } from "../src/races.js";
 import { diffEvents } from "../src/standings.js";
@@ -31,10 +31,14 @@ const pageWith = (rows) =>
 // A fake Velocidrone whose board can change between calls.
 // site.game = true makes the game endpoint answer; otherwise it fails and the page is used.
 function fakeSite(rows) {
-  const site = { rows, calls: 0, gameCalls: 0, fail: false, game: false };
-  site.fetch = async (url) => {
+  // byTrack counts every request per Velocidrone track id (page and game endpoint alike).
+  const site = { rows, calls: 0, gameCalls: 0, byTrack: {}, fail: false, game: false };
+  const count = (id) => { site.byTrack[id] = (site.byTrack[id] || 0) + 1; };
+  site.fetch = async (url, init) => {
     if (String(url).includes("getLeaderBoard")) {
       site.gameCalls++;
+      const body = decodeURIComponent(String(init?.body || "").replace(/^post_data=/, ""));
+      count((await decrypt(body).catch(() => "")).match(/track_id=(\d+)/)?.[1]);
       if (site.fail || !site.game) return new Response("<html>nope</html>", { status: 419 });
       const tracktimes = site.rows.map(([, time, name, model = "Hummingbird RS"], i) => ({
         playername: name, lap_time: String(time), model_id: model === "Hummingbird RS" ? 121 : 48, user_id: 1000 + i, country: "US",
@@ -42,6 +46,7 @@ function fakeSite(rows) {
       return new Response(await encrypt(JSON.stringify({ success: true, tracktimes })), { status: 200 });
     }
     site.calls++;
+    count(String(url).match(/\/leaderboard\/\d+\/(\d+)\//)?.[1]);
     if (site.fail) return new Response("down", { status: 503 });
     return new Response(pageWith(site.rows), { status: 200 });
   };
@@ -85,11 +90,12 @@ test("hourly runs refresh, then lock exactly at the deadline, then never fetch a
   assert.equal(r[0].action, "locked");
   assert.equal(r[0].record.lockMethod, "final-fetch");
 
-  const callsAtLock = site.calls + site.gameCalls;
+  const callsAtLock = site.byTrack["2207"];
   site.rows = [[1, "60.000", "TMAD"]]; // posted after the deadline
   r = await runSchedule(env, LOCK + HOUR, deps);
   assert.equal(r[0].action, "skip-locked");
-  assert.equal(site.calls + site.gameCalls, callsAtLock, "a locked track is never fetched");
+  assert.equal(site.byTrack["2207"], callsAtLock, "a locked track is never fetched");
+  assert.equal(r[1].action, "refreshed", "Track 2 opens once Track 1 has locked");
 
   const body = await get(env, "/api/tracks/1", LOCK + 2 * HOUR, deps);
   assert.equal(body.track.status, "locked");
@@ -132,11 +138,11 @@ test("a lock run more than 60 seconds late doesn't fetch", async () => {
   const deps = { fetchImpl: site.fetch, retryDelayMs: 0 };
   await runSchedule(env, LOCK - 9 * 60_000, deps); // the 11:50 PM refresh
   site.rows = [[1, "50.000", "TMAD"]];
-  const calls = site.calls;
+  const calls = site.byTrack["2207"];
   const r = await runSchedule(env, LOCK + 61_000, deps); // e.g. the midnight hourly run
   assert.equal(r[0].action, "locked");
   assert.equal(r[0].record.lockMethod, "last-before-deadline");
-  assert.equal(site.calls, calls);
+  assert.equal(site.byTrack["2207"], calls);
 });
 
 test("a refresh that finishes after the lock can't overwrite it", async () => {
@@ -763,4 +769,18 @@ test("overall: Week 1 points worked out from the locked Smash standings and the 
     Velocidrone: [3, 1, null, 4, 8], BETAFPV: [2, 2, null, 4, 8], RadioMaster: [1, 3, null, 4, 8],
   });
   assert.deepEqual(body.teams.slice(0, 2).map((t) => t.sponsor), ["Happymodel", "DamagD"], "level on points: draft order");
+});
+
+test("Track 2: opens after Track 1 locks, counts only Cetus PRO times, locks Sat Nov 14 11:59 PM ET", async () => {
+  const { trackStatus } = await import("../src/sync.js");
+  const t2 = TRACKS.find((t) => t.id === 2);
+  assert.equal(trackStatus(t2, null, Date.parse("2026-11-08T04:00:00Z")), "upcoming");
+  assert.equal(trackStatus(t2, null, Date.parse("2026-11-09T06:00:00Z")), "live");
+  assert.equal(t2.locksAt, "2026-11-15T04:59:00Z");
+  assert.equal(new Date(t2.locksAt).toLocaleString("en-US", { timeZone: "America/New_York", weekday: "short", hour: "numeric", minute: "2-digit" }), "Sat 11:59 PM");
+  const rows = [{ rank: 1, name: "Blastaa (Beta Tester)", time: 115.3, model: "Cetus PRO" }, { rank: 2, name: "caleb.", time: 110, model: "Tiny Hawk" }];
+  const s = computeStandings(rows, TEAMS, ALIASES, t2.quad);
+  const pilots = s.teams.flatMap((t) => t.pilots);
+  assert.equal(pilots.find((p) => p.name === "Blastaa").time, 115.3, "(Beta Tester) tag still matches");
+  assert.equal(pilots.find((p) => p.name === "caleb.").posted, false, "a Tiny Hawk time doesn't count");
 });
