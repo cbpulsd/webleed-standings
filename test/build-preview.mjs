@@ -66,9 +66,10 @@ ${css}
     document.getElementById("scenarioNote").textContent = sc.note || "";
     if (sc.view === "races") setTimeout(() => document.getElementById("viewRacesBtn")?.click(), 300);
     if (sc.view === "stats") setTimeout(() => document.getElementById("viewStatsBtn")?.click(), 300);
+    if (sc.view === "racestats") setTimeout(() => document.getElementById("viewRaceStatsBtn")?.click(), 300);
   }
   bar.addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) boot(b.dataset.k); });
-  boot(${statsFixture ? '"stats"' : '"live"'});
+  boot(${statsFixture ? '"racestats"' : '"live"'});
 })();
 </script>
 `;

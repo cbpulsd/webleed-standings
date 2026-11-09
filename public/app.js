@@ -85,7 +85,7 @@
     document.querySelector(".views").hidden = o;
     $("viewOverall").hidden = !o;
     document.querySelector(".wrap").classList.toggle("wide", o);
-    if (o) { $("viewTeams").hidden = true; $("viewPilots").hidden = true; $("viewRaces").hidden = true; $("viewStats").hidden = true; liveStop(); }
+    if (o) { $("viewTeams").hidden = true; $("viewPilots").hidden = true; $("viewRaces").hidden = true; $("viewStats").hidden = true; $("viewRaceStats").hidden = true; liveStop(); }
     else showView(state.view);
   }
 
@@ -217,8 +217,10 @@
     $("viewStatsBtn").setAttribute("aria-selected", v === "stats");
     $("viewStats").hidden = v !== "stats";
     if (v === "stats" && !isOverall()) loadStats();
+    $("viewRaceStatsBtn").setAttribute("aria-selected", v === "racestats");
+    $("viewRaceStats").hidden = v !== "racestats";
     $("viewRaces").hidden = v !== "races";
-    if (v === "races" && !isOverall()) { loadRaces(); liveStart(state.current, loadRaces); }
+    if ((v === "races" || v === "racestats") && !isOverall()) { loadRaces(); liveStart(state.current, loadRaces); }
     else liveStop();
     $("viewTeams").hidden = v !== "teams";
     $("viewPilots").hidden = v !== "pilots";
@@ -227,6 +229,7 @@
   $("viewPilotsBtn").addEventListener("click", () => showView("pilots"));
   $("viewRacesBtn").addEventListener("click", () => showView("races"));
   $("viewStatsBtn").addEventListener("click", () => showView("stats"));
+  $("viewRaceStatsBtn").addEventListener("click", () => showView("racestats"));
 
   // ---------- races ----------
   // League-set time: a marker whose tooltip says what Velocidrone lists and why.
@@ -237,7 +240,7 @@
   async function loadRaces() {
     const id = state.current;
     if (id == null || isOverall()) return;
-    if (!state.races || state.races.id !== id) { state.races = { id, data: null, error: null }; renderRaces(); }
+    if (!state.races || state.races.id !== id) { state.races = { id, data: null, error: null }; renderRaces(); renderRaceStats(); }
     try {
       const res = await api(`/tracks/${id}/races`);
       const body = await res.json().catch(() => ({}));
@@ -249,6 +252,7 @@
       state.races = { id, data: state.races?.data || null, error: e.message };
     }
     renderRaces();
+    renderRaceStats();
   }
 
   const fmtTime = (t) => (t === "dnf" ? "DNF" : typeof t === "number" ? t.toFixed(3) : "");
@@ -540,7 +544,132 @@
       <div class="heat-key">Fewer ${steps.map((c2) => `<i style="background:${c2}"></i>`).join("")} More · busiest hour: ${max} new bests</div>`;
   }
   let resizeTimer;
-  window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (state.view === "stats" && state.stats?.data && !$("viewStats").hidden) renderStats(); }, 200); });
+  window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (state.view === "stats" && state.stats?.data && !$("viewStats").hidden) renderStats(); if (state.view === "racestats" && state.races?.data) renderRaceStats(); }, 200); });
+
+  // ---------- race stats ----------
+  // Times at or above this are placeholders (e.g. 999 for a pilot who didn't fly a heat):
+  // they still finish last for points but don't count as real heat times.
+  const PLACEHOLDER_TIME = 900;
+  const realTime = (t) => typeof t === "number" && t < PLACEHOLDER_TIME;
+
+  function raceStatsData(d) {
+    const smash = new Map((state.data?.standings?.teams || []).flatMap((t) => t.pilots.filter((p) => p.posted).map((p) => [p.name, p.time])));
+    const pilots = d.tierResults.flatMap((tr) => tr.entries.filter((e) => e.pilot).map((e) => {
+      const heats = e.times.map((t, i) => ({ race: i + 1, time: t, pos: e.positions[i] })).filter((h) => h.time != null);
+      const real = heats.filter((h) => realTime(h.time)).map((h) => h.time);
+      const mean = real.length ? real.reduce((a, b) => a + b, 0) / real.length : null;
+      const finishes = heats.map((h) => h.pos).filter((p) => p > 0);
+      return {
+        tier: tr.tier, pilot: e.pilot, team: e.sponsor, points: e.total, heats, real, mean,
+        sd: real.length >= 4 ? Math.sqrt(real.reduce((a, b) => a + (b - mean) ** 2, 0) / real.length) : null,
+        best: real.length ? Math.min(...real) : null,
+        wins: heats.filter((h) => h.pos === 1).length,
+        avgFinish: finishes.length ? finishes.reduce((a, b) => a + b, 0) / finishes.length : null,
+        smash: smash.get(e.pilot) ?? null,
+      };
+    }));
+    return {
+      pilots,
+      wins: pilots.filter((p) => p.wins).sort((a, b) => b.wins - a.wins || a.tier - b.tier),
+      // Each pilot's single best heat, so one pilot can't fill the list.
+      fastest: pilots.filter((p) => p.best != null).map((p) => ({ ...p, race: p.heats.find((h) => h.time === p.best).race, time: p.best })).sort((a, b) => a.time - b.time).slice(0, 10),
+      consistent: pilots.filter((p) => p.sd != null).sort((a, b) => a.sd - b.sd).slice(0, 10),
+      over: pilots.filter((p) => p.best != null && p.smash != null && p.best < p.smash).map((p) => ({ ...p, beat: p.smash - p.best })).sort((a, b) => b.beat - a.beat).slice(0, 10),
+      mvps: d.tierResults.map((tr) => ({ tier: tr.tier, top: tr.entries.filter((e) => e.total != null && e.pilot).slice(0, 3).map((e) => pilots.find((p) => p.tier === tr.tier && p.team === e.sponsor)) })),
+    };
+  }
+
+  function renderRaceStats() {
+    const el = $("viewRaceStats");
+    if (el.hidden && state.view !== "racestats") return;
+    const r = state.races;
+    if (!r || (!r.data && !r.error)) { el.innerHTML = `<div class="empty">Loading race stats…</div>`; return; }
+    if (!r.data) { el.innerHTML = `<div class="empty">Couldn't load race results (${esc(r.error)}).</div>`; return; }
+    const d = r.data;
+    if (!d.tierResults.some((t) => t.racesRun)) { el.innerHTML = `<div class="empty">Race stats appear once race day results are entered.</div>`; return; }
+    const s = raceStatsData(d);
+    const who = (p, extra = "") => `${esc(p.pilot)}<small>Team ${esc(p.team)} · Tier ${p.tier}${extra}</small>`;
+    const list = (title, sub, head, rows, empty) => `<section class="chart-card" aria-label="${esc(title)}">
+        <div class="sec-head"><h2>${esc(title)}</h2><span>${esc(sub)}</span></div>
+        <table class="stbl"><thead><tr><th>Pilot</th>${head.map((h) => `<th class="num">${h}</th>`).join("")}</tr></thead><tbody>
+          ${rows || `<tr><td colspan="${head.length + 1}">${empty}</td></tr>`}
+        </tbody></table></section>`;
+
+    el.innerHTML = `
+      <p class="races-note">${esc(raceDayText(d))} · ${d.tiers} tiers, ${d.racesPerTier} races each. Points per race go ${d.points[0]} down to ${d.points[d.points.length - 1]} by finishing place in the tier. Times of ${PLACEHOLDER_TIME}s or more (like a 999 for a heat not flown) still finish last but aren't counted as heat times below.</p>
+
+      <section class="chart-card" aria-label="Points by tier">
+        <div class="sec-head"><h2>Points by tier</h2><span>where each team's race points came from</span></div>
+        <div class="tier-key">${d.tierResults.map((t) => `<span><i style="background:var(--t${t.tier})"></i>Tier ${t.tier}</span>`).join("")}</div>
+        <div class="chart-box" id="tierPointsChart"></div>
+      </section>
+
+      <section class="chart-card" aria-label="Tier MVPs">
+        <div class="sec-head"><h2>Tier MVPs</h2><span>most points in each tier</span></div>
+        <div class="tier-grid">${s.mvps.map((m) => `<div class="tier-card">
+          <h3><i style="background:var(--t${m.tier})"></i>Tier ${m.tier}</h3>
+          <ol>${m.top.map((p, i) => `<li><span>${i + 1}. ${esc(p.pilot)}<small>${esc(p.team)}</small></span><b>${p.points} pts</b></li>`).join("") || "<li>No results yet</li>"}</ol>
+          ${m.top[0] ? `<p class="sub">${m.top[0].wins} win${m.top[0].wins === 1 ? "" : "s"} · average finish ${m.top[0].avgFinish.toFixed(1)}</p>` : ""}
+        </div>`).join("")}</div>
+      </section>
+
+      <div class="two-col">
+        ${list("Race wins", "heats won", ["Wins"], s.wins.map((p) => `<tr><td>${who(p)}</td><td class="num">${p.wins}</td></tr>`).join(""), "No wins yet")}
+        ${list("Fastest heats", "each pilot's best 3-lap heat", ["Race", "Time"], s.fastest.map((p) => `<tr><td>${who(p)}</td><td class="num">${p.race}</td><td class="num">${secs(p.time)}</td></tr>`).join(""), "No heats yet")}
+      </div>
+      <div class="two-col">
+        ${list("Most consistent", "smallest spread across heats", ["Average", "Spread"], s.consistent.map((p) => `<tr><td>${who(p)}</td><td class="num">${secs(p.mean)}</td><td class="num">±${p.sd.toFixed(2)}</td></tr>`).join(""), "Needs four heats per pilot")}
+        ${list("Race-day overperformers", "best heat faster than their Smash time", ["Best heat", "Beat by"], s.over.map((p) => `<tr><td>${who(p)}</td><td class="num">${secs(p.best)}<small>Smash ${secs(p.smash)}</small></td><td class="num">−${secs(p.beat, 2)}s</td></tr>`).join(""), "Nobody beat their Smash time")}
+      </div>
+      <p class="sub">Spread is the standard deviation of a pilot's heat times, from at least four heats.</p>`;
+    drawTierPoints(d);
+  }
+
+  function drawTierPoints(d) {
+    const box = $("tierPointsChart");
+    if (!box) return;
+    const W = Math.max(300, box.clientWidth || 800), narrow = W < 520;
+    const m = { l: narrow ? 96 : 150, r: 44, t: 4, b: 22 }, rowH = 28, barH = 18;
+    const teams = d.teams.filter((t) => t.total != null);
+    const H = m.t + m.b + teams.length * rowH;
+    const max = Math.max(1, ...teams.map((t) => t.total));
+    const step = [10, 20, 25, 50, 100].find((k) => max / k <= (narrow ? 4 : 8)) || 200;
+    const x1 = Math.ceil(max / step) * step;
+    const X = (v) => (v / x1) * (W - m.l - m.r);
+    const ticks = []; for (let v = 0; v <= x1; v += step) ticks.push(v);
+    const short = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
+    const tiers = d.tierResults.map((t) => t.tier);
+    box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Each team's race points split by tier">
+      ${ticks.map((v) => `<line class="grid" x1="${m.l + X(v)}" x2="${m.l + X(v)}" y1="${m.t}" y2="${H - m.b}"/><text x="${m.l + X(v)}" y="${H - 6}" text-anchor="middle">${v}</text>`).join("")}
+      ${teams.map((t, i) => {
+        const y = m.t + i * rowH + (rowH - barH) / 2;
+        let x = m.l;
+        const segs = tiers.map((ti) => {
+          const v = t.byTier[ti] || 0, w = X(v);
+          const pilot = t.lineup?.[ti] || "";
+          const out = v ? `<rect class="seg" x="${x.toFixed(1)}" y="${y}" width="${Math.max(0, w - 2).toFixed(1)}" height="${barH}" rx="2" fill="var(--t${ti})" data-tip="Team ${esc(t.sponsor)}|Tier ${ti}|${esc(pilot)}|${v}"/>` : "";
+          x += w;
+          return out;
+        }).join("");
+        return `<text class="tn" x="${m.l - 10}" y="${y + barH / 2 + 4}" text-anchor="end">${esc(short(t.sponsor, narrow ? 11 : 20))}</text>${segs}<text class="sp" x="${x + 4}" y="${y + barH / 2 + 4}">${t.total}</text>`;
+      }).join("")}
+    </svg><div class="tip" id="tptip" hidden></div>`;
+    const tip = box.querySelector("#tptip");
+    const show = (r) => {
+      const [team, tier, pilot, v] = r.dataset.tip.split("|");
+      tip.innerHTML = `<b>${team}</b><div><span>${tier}</span><span>${v} pts</span></div>${pilot ? `<div><span>Pilot</span><span>${pilot}</span></div>` : ""}`;
+      tip.hidden = false;
+      const bx = box.getBoundingClientRect(), rr = r.getBoundingClientRect(), wide = tip.offsetWidth;
+      const cx = rr.left + rr.width / 2 - bx.left;
+      tip.style.left = `${Math.max(0, Math.min(cx - wide / 2, bx.width - wide))}px`;
+      tip.style.top = `${Math.max(0, rr.top - bx.top - tip.offsetHeight - 6)}px`;
+    };
+    box.querySelectorAll(".seg").forEach((r) => {
+      r.addEventListener("mouseenter", () => show(r));
+      r.addEventListener("click", () => show(r));
+      r.addEventListener("mouseleave", () => { tip.hidden = true; });
+    });
+  }
 
   // ---------- live updates (WebSocket to the track's RaceRoom) ----------
   const live = { id: null, ws: null, onUpdate: null, retry: 1000, timer: null, ping: null, poll: null };
