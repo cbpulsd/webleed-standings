@@ -342,7 +342,8 @@
     const pointsLine = d.points.map((p, i) => `${ordinal(i + 1)} ${p}`).join(" · ");
     const summary = raceSummaryTable(d);
 
-    const tierTables = d.tierResults.map((t) => fold(`tier-${t.tier}`, `Tier ${t.tier}`, tierMeta(t, d), `
+    // Tiers in race-day order: Tier 4 flies first, Tier 1 last, then the bonus round.
+    const tierTables = [...d.tierResults].reverse().map((t) => fold(`tier-${t.tier}`, `Tier ${t.tier}`, tierMeta(t, d), `
         <div class="table-wrap"><table class="overall grid">
           <thead><tr><th class="team-col" scope="col">Team · Pilot</th>${Array.from({ length: d.racesPerTier }, (_, i) => `<th class="num${i === 0 ? " wk-start" : ""}" scope="col">R${i + 1}</th>`).join("")}<th class="num tot" scope="col">Total</th></tr></thead>
           <tbody>${t.entries.map((e) => `<tr>
@@ -355,8 +356,8 @@
     el.innerHTML = `
       <p class="races-note"><b>Race day: ${esc(raceDayText(d))}.</b> Each team races four of its five pilots, one per tier, and sits one. Every tier runs ${d.racesPerTier} races. Points by finishing position: ${pointsLine}. In each tier, a race shows the points earned and the pilot's 3-lap time underneath.${anyResults ? "" : " Lineups and results appear here on race day."}${d.live ? ' <span class="live-pill">Updates live</span>' : ""}</p>
       ${fold("summary", "Team race points", leaderOf(d.teams), summary)}
-      ${d.bonus ? fold("bonus", "Bonus round", bonusMeta(d.bonus), bonusSection(d)) : ""}
       ${tierTables}
+      ${d.bonus ? fold("bonus", "Bonus round", bonusMeta(d.bonus), bonusSection(d)) : ""}
       <div class="races-foot"><a class="btn" href="#admin-${d.track}">Race director: enter results</a></div>`;
   }
 
@@ -864,7 +865,7 @@
     }).join("");
     const picked = d.teams.filter((t) => t.sitting).length;
 
-    const tierTables = d.tierResults.map((t) => {
+    const tierTables = [...d.tierResults].reverse().map((t) => {
       const rows = draftSorted(t.entries).map((e) => `<tr>
         <th class="team-col" scope="row"><div class="ocell"><span class="oname"><b>Team ${esc(e.sponsor)}</b><small data-pilot="${t.tier}|${esc(e.sponsor)}">${pilotLabel(e.pilot)}</small></span></div></th>
         ${e.times.map((tm, ri) => `<td class="tcell${ri === 0 ? " wk-start" : ""}">
