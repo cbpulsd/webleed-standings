@@ -246,17 +246,17 @@ export async function route(request, url, env, ctx, now, deps = {}) {
 }
 
 // Season table. Each week's points are worked out from that track:
-//   Smash: place in the locked team standings -> SEASON_POINTS (10 for 1st ... 1 for 10th)
-//   Race:  place by tier race points once every tier has finished -> SEASON_POINTS,
+//   Smash: place in the locked team standings -> SEASON_POINTS.smash (10 for 1st ... 1 for 10th)
+//   Race:  place by tier race points once every tier has finished -> SEASON_POINTS.race (20 ... 2),
 //          plus the bonus round's 3/2/1/0 for the top four once it's done.
 // Teams level on points share the higher place. A value saved in KV under "overall"
 // ({ points: { "<sponsor>": { "<week>": { smash, race } } } }) replaces the worked-out one.
-const placePoints = (list, key) => {
+const placePoints = (list, key, table) => {
   const out = new Map();
   for (const t of list) {
     if (t[key] == null) continue;
     const place = 1 + list.filter((o) => o[key] != null && o[key] > t[key]).length;
-    out.set(t.sponsor, SEASON_POINTS[place - 1] ?? 0);
+    out.set(t.sponsor, table[place - 1] ?? 0);
   }
   return out;
 };
@@ -268,7 +268,7 @@ async function weekPoints(env, track, now) {
   if (record?.status === "locked" && record.standings) {
     const s = applyOverrides(record.standings, overridesFor(track));
     // Lower total is better: flip the sign so placePoints ranks fastest first.
-    for (const [k, v] of placePoints(s.teams.map((t) => ({ sponsor: t.sponsor, score: -t.total })), "score")) smash.set(k, v);
+    for (const [k, v] of placePoints(s.teams.map((t) => ({ sponsor: t.sponsor, score: -t.total })), "score", SEASON_POINTS.smash)) smash.set(k, v);
   }
   const race = new Map();
   const bonus = new Map();
@@ -276,7 +276,7 @@ async function weekPoints(env, track, now) {
   const done = r.tierResults.every((t) => t.racesRun === r.racesPerTier);
   const bonusDone = !r.bonus || r.bonus.places.length === r.bonus.seeds.length;
   if (done && bonusDone) {
-    for (const [k, v] of placePoints(r.teams, "raceTotal")) race.set(k, v);
+    for (const [k, v] of placePoints(r.teams, "raceTotal", SEASON_POINTS.race)) race.set(k, v);
     for (const p of r.bonus?.places || []) bonus.set(p.sponsor, p.points);
   }
   return { smash, race, bonus };

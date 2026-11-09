@@ -765,11 +765,11 @@ test("overall: Week 1 points worked out from the locked Smash standings and the 
   body = await get(env, "/api/overall", LOCK + 30 * HOUR, {});
   const table = Object.fromEntries(body.teams.map((t) => [t.sponsor, [t.weeks[1].smash, t.weeks[1].race, t.weeks[1].raceBonus, t.total, t.position]]));
   assert.deepEqual(table, {
-    Happymodel: [10, 11, 2, 21, 1], DamagD: [8, 13, 3, 21, 1], MEPSKING: [9, 9, 1, 18, 3], "EMAX USA": [7, 7, 0, 14, 4],
-    NewBeeDrone: [6, 5, null, 11, 5], "Fractal Engineering": [4, 6, null, 10, 6], WREKD: [5, 4, null, 9, 7],
-    Velocidrone: [3, 1, null, 4, 8], BETAFPV: [2, 2, null, 4, 8], RadioMaster: [1, 3, null, 4, 8],
+    DamagD: [8, 23, 3, 31, 1], Happymodel: [10, 20, 2, 30, 2], MEPSKING: [9, 17, 1, 26, 3], "EMAX USA": [7, 14, 0, 21, 4],
+    NewBeeDrone: [6, 10, null, 16, 5], "Fractal Engineering": [4, 12, null, 16, 5], WREKD: [5, 8, null, 13, 7],
+    RadioMaster: [1, 6, null, 7, 8], BETAFPV: [2, 4, null, 6, 9], Velocidrone: [3, 2, null, 5, 10],
   });
-  assert.deepEqual(body.teams.slice(0, 2).map((t) => t.sponsor), ["Happymodel", "DamagD"], "level on points: draft order");
+  assert.deepEqual(body.teams.slice(0, 2).map((t) => t.sponsor), ["DamagD", "Happymodel"], "Race points: 20 for 1st down to 2 for 10th");
 });
 
 test("Track 2: opens after Track 1 locks, counts only Cetus PRO times, locks Sat Nov 14 11:59 PM ET", async () => {

@@ -96,7 +96,7 @@
     if (isOverall()) {
       $("title").textContent = "Overall Standings";
       document.title = "Season 5 Overall Standings";
-      $("sub").textContent = "Season points for each team. Each week, Smash and Races each give 10 points for 1st down to 1 for 10th, and the bonus round adds 3, 2, 1 or 0 to the top four's Race points. A week's Smash points come in when its track locks, and its Race points once every race is in.";
+      $("sub").textContent = "Season points for each team. Each week, Smash gives 10 points for 1st down to 1 for 10th, Races give 20 for 1st down to 2 for 10th, and the bonus round adds 3, 2, 1 or 0 to the top four's Race points. A week's Smash points come in when its track locks, and its Race points once every race is in.";
       return;
     }
     const t = currentTrack();
