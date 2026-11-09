@@ -141,7 +141,8 @@ export function computeBonus(ranked, lineups, results, cfg = RACES, regularDone 
   const seeds = ranked.filter((t) => t.raceTotal != null).slice(0, size).map((t) => t.sponsor);
   const tierIds = Array.from({ length: cfg.tiers }, (_, i) => i + 1);
   const heatIds = Array.from({ length: heatCount }, (_, i) => i + 1);
-  const pointsFor = (pos) => (pos == null ? null : pos === 0 ? 0 : cfg.points[pos - 1] ?? 0);
+  const heatPoints = cfg.bonus.heatPoints || cfg.points;
+  const pointsFor = (pos) => (pos == null ? null : pos === 0 ? 0 : heatPoints[pos - 1] ?? 0);
 
   function play(id, label, a, b) {
     const sides = [a, b];
@@ -169,7 +170,7 @@ export function computeBonus(ranked, lineups, results, cfg = RACES, regularDone 
   if (final.winner) places.push({ place: 1, sponsor: final.winner }, { place: 2, sponsor: final.loser });
   if (third.winner) places.push({ place: 3, sponsor: third.winner }, { place: 4, sponsor: third.loser });
   places.forEach((p) => (p.points = placePoints[p.place - 1] ?? 0));
-  return { seeds: ready ? seeds : [], provisional: !regularDone, heats: heatCount, placePoints, matches: [semi1, semi2, final, third], places };
+  return { seeds: ready ? seeds : [], provisional: !regularDone, heats: heatCount, heatPoints, placePoints, matches: [semi1, semi2, final, third], places };
 }
 
 // Bonus heat times: { "<match>": { "<heat>": { "<sponsor>": { "<tier>": time } } } }

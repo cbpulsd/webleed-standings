@@ -57,10 +57,10 @@ export const RACES = {
   racesPerTier: 8,
   points: [10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
   // Bonus round for the top four teams by race points: #1 v #4 and #2 v #3 fly
-  // three heats each (all four racers per team, eight pilots a heat, points as above),
+  // three heats each (all four racers per team, eight pilots a heat, heatPoints by place),
   // then the winners fly three heats for 1st/2nd and the losers for 3rd/4th.
   // Finishing 1st-4th adds these to the team's race points for the week.
-  bonus: { teams: 4, heats: 3, points: [3, 2, 1, 0] },
+  bonus: { teams: 4, heats: 3, heatPoints: [8, 7, 6, 5, 4, 3, 2, 1], points: [3, 2, 1, 0] },
 };
 
 // Season table points each week, by place: 1st 10 down to 10th 1, once for Smash

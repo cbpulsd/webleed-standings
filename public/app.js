@@ -286,7 +286,7 @@
   }
 
   // ---------- bonus round ----------
-  const bonusIntro = (b) => `Top ${b.seeds.length || 4} teams by race points. #1 v #4 and #2 v #3 fly ${b.heats} heats with all four racers (eight pilots a heat, scored like the tiers); the winners then fly ${b.heats} heats for 1st and 2nd, the losers for 3rd and 4th. Bonus race points: ${b.placePoints.map((p, i) => `${ordinal(i + 1)} +${p}`).join(" · ")}.`;
+  const bonusIntro = (b) => `Top ${b.seeds.length || 4} teams by race points. #1 v #4 and #2 v #3 fly ${b.heats} heats with all four racers (eight pilots a heat, ${b.heatPoints[0]} points for 1st down to ${b.heatPoints[b.heatPoints.length - 1]} for ${ordinal(b.heatPoints.length)}); the winners then fly ${b.heats} heats for 1st and 2nd, the losers for 3rd and 4th. Bonus race points: ${b.placePoints.map((p, i) => `${ordinal(i + 1)} +${p}`).join(" · ")}.`;
   const bonusMeta = (b) => (!b?.seeds?.length ? "after the tiers" : b.places.length === 4 ? `Won by Team ${esc(b.places[0].sponsor)}` : b.matches.some((m) => m.heats.some((h) => h.run)) ? "in progress" : "seeds set");
   function bonusPlaces(b) {
     if (!b.places.length) return "";
