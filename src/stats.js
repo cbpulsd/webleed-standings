@@ -105,7 +105,7 @@ export function computeStats(track, history, events, teams) {
     summary: { newBests: league.filter((e) => e.kind === "pb").length },
     teams: teamStats,
     grinders: grinders.slice(0, 15),
-    smallestGrinders: smallest.slice(0, 10).map((p) => ({ ...p, gained: Math.round(gainedOf(p) * 1000) / 1000 })),
+    smallestGrinders: smallest.slice(0, 15).map((p) => ({ ...p, gained: Math.round(gainedOf(p) * 1000) / 1000 })),
     tiersAt: latest?.at || null,
     depth,
     tiers: tierStats,
