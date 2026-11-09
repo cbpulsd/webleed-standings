@@ -52,6 +52,10 @@ export function computeStats(track, history, events, teams) {
     p.best = p.best == null ? e.time : Math.min(p.best, e.time);
   }
   const grinders = [...byPilot.values()].filter((p) => p.pbs > 0).sort((a, b) => b.pbs - a.pbs || a.best - b.best);
+  // Smallest grinders: rostered pilots with a time, fewest new bests first (0 counts);
+  // level on new bests, the one who cut the least time from their first time comes first.
+  const gainedOf = (p) => (p.first != null && p.best != null ? p.first - p.best : 0);
+  const smallest = [...byPilot.values()].sort((a, b) => a.pbs - b.pbs || gainedOf(a) - gainedOf(b) || a.pilot.localeCompare(b.pilot));
 
   // Depth and tiers from the latest save (the final one once a track locks). A pilot's
   // tier is their place within their own team by time: fastest = Tier 1.
@@ -101,6 +105,7 @@ export function computeStats(track, history, events, teams) {
     summary: { newBests: league.filter((e) => e.kind === "pb").length },
     teams: teamStats,
     grinders: grinders.slice(0, 15),
+    smallestGrinders: smallest.slice(0, 10).map((p) => ({ ...p, gained: Math.round(gainedOf(p) * 1000) / 1000 })),
     tiersAt: latest?.at || null,
     depth,
     tiers: tierStats,

@@ -442,12 +442,22 @@
       </div>
       <p class="sub">Draft spot is a pilot's place among the ${d.leaguePilots} league pilots by tryout rank going into the draft; this week is their place among the same pilots by time on this track. Pilots without a time aren't placed.</p>` : ""}
 
+      <div class="two-col">
       <section class="chart-card" aria-label="Biggest grinders">
         <div class="sec-head"><h2>Biggest grinders</h2><span>most new personal bests</span></div>
         <table class="stbl"><thead><tr><th class="num">#</th><th>Pilot</th><th class="num">PBs</th><th class="num">Best</th></tr></thead><tbody>
           ${d.grinders.map((p, i) => `<tr><td class="num">${i + 1}</td><td>${esc(p.pilot)}<small>Team ${esc(p.team)}</small></td><td class="num">${p.pbs}</td><td class="num">${secs(p.best)}<small>from ${secs(p.first)}</small></td></tr>`).join("")}
         </tbody></table>
-      </section>`;
+      </section>
+
+      ${d.smallestGrinders?.length ? `<section class="chart-card" aria-label="Smallest grinders">
+        <div class="sec-head"><h2>Smallest grinders</h2><span>fewest new personal bests</span></div>
+        <table class="stbl"><thead><tr><th class="num">#</th><th>Pilot</th><th class="num">PBs</th><th class="num">Best</th></tr></thead><tbody>
+          ${d.smallestGrinders.map((p, i) => `<tr><td class="num">${i + 1}</td><td>${esc(p.pilot)}<small>Team ${esc(p.team)}</small></td><td class="num">${p.pbs}</td><td class="num">${secs(p.best)}<small>${p.pbs ? `from ${secs(p.first)}` : "first time"}</small></td></tr>`).join("")}
+        </tbody></table>
+        <p class="sub">Rostered pilots with a time on this track, fewest new personal bests first. Level on new bests, the pilot who cut the least time from their first time ranks first.</p>
+      </section>` : ""}
+      </div>`;
 
     drawTeamChart(d, looks, swatch);
     drawDepth(d);
