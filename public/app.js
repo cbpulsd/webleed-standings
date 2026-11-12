@@ -456,14 +456,14 @@
       </section>
 
       <div class="two-col">
-        ${moveList("Biggest sandbaggers: current vs tryout", "faster than their tryout spot", d.sandbaggers, d.leaguePilots, "up")}
-        ${moveList("Biggest dropoff: current vs tryout", "slower than their tryout spot", d.dropoffs, d.leaguePilots, "down")}
+        ${moveList("Most improved: current vs tryout", "faster than their tryout spot", d.sandbaggers, d.leaguePilots, "up")}
+        ${moveList("Biggest drops: current vs tryout", "slower than their tryout spot", d.dropoffs, d.leaguePilots, "down")}
       </div>
       <p class="sub">Tryout spot is a pilot's place among the ${d.leaguePilots} league pilots by tryout rank going into the draft; this week is their place among the same pilots by time on this track. Pilots without a time aren't placed.</p>` : ""}
 
       ${d.pickSandbaggers ? `<div class="two-col">
-        ${pickList("Biggest sandbaggers: current vs draft pick", "faster than where they were picked", d.pickSandbaggers, "up")}
-        ${pickList("Biggest dropoff: current vs draft pick", "slower than where they were picked", d.pickDropoffs, "down")}
+        ${pickList("Most improved: current vs draft pick", "faster than where they were picked", d.pickSandbaggers, "up")}
+        ${pickList("Biggest drops: current vs draft pick", "slower than where they were picked", d.pickDropoffs, "down")}
       </div>
       <p class="sub">Draft # puts the captains first (#1 Raimon Shaigne to #10 BenDaOctopus), then the snake draft's 40 picks as #11–50, so pick 1 is #11. LB # is the pilot's place among the league's pilots by time on this track, the same number the Smash tab shows.</p>` : ""}
 
