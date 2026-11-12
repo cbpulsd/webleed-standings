@@ -19,7 +19,7 @@
 //
 // The page in /public is served as static files and only reads from /api.
 
-import { ADMIN_PASSWORD_SHA256, ALIASES, LATE_LOCK_AFTER_MINUTES, RACES, REFRESH_MINUTES, SEASON_POINTS, LEAGUE, TEAMS, NO_VISIT_REFRESH_BEFORE_LOCK_MINUTES, SEASON, STALE_MINUTES, TRACKS } from "./config.js";
+import { ADMIN_PASSWORD_SHA256, ALIASES, LATE_LOCK_AFTER_MINUTES, RACES, REFRESH_MINUTES, SEASON_POINTS, LEAGUE, TEAMS, NO_VISIT_REFRESH_BEFORE_LOCK_MINUTES, SEASON, STALE_MINUTES, TEAM_NAMES, TRACKS } from "./config.js";
 import { applyOverrides, computeStandings, norm, quadAllowed } from "./standings.js";
 import { computeRaces } from "./races.js";
 import { raceStore } from "./racestore.js";
@@ -28,6 +28,7 @@ import { fetchGameLeaderboard, gameRows } from "./gameapi.js";
 import { trackIdFromUrl } from "./leaderboard.js";
 import { getEvents, getHistory, getRecord } from "./store.js";
 import { computeStats } from "./stats.js";
+import { DRAFT_ORDER, DRAFT_RANKS } from "./draft.js";
 import { seedFor } from "./seed/index.js";
 import { findTrack, lockTrack, lockTime, overridesFor, runSchedule, standingsFor, syncTrack, teamsFor, trackStatus } from "./sync.js";
 
@@ -80,6 +81,25 @@ export async function route(request, url, env, ctx, now, deps = {}) {
   // /api/overall
   if (request.method === "GET" && parts[1] === "overall" && parts.length === 2) {
     return json(await overall(env, now), 200, "public, max-age=60");
+  }
+
+  // /api/export: everything the site has, as one JSON file (cached at the edge for 5 minutes).
+  if (request.method === "GET" && parts[1] === "export" && parts.length === 2) {
+    const cache = typeof caches !== "undefined" ? caches.default : null;
+    const key = new Request(`https://export.cache/${Math.floor(now / 300_000)}`);
+    const hit = cache && (await cache.match(key));
+    if (hit) return hit;
+    const body = await exportAll(env, now);
+    const res = new Response(JSON.stringify(body, null, 1), {
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        "content-disposition": `attachment; filename="webleed-s5-data-${new Date(now).toISOString().slice(0, 10)}.json"`,
+        "cache-control": "public, max-age=300",
+        ...cors(),
+      },
+    });
+    if (cache && ctx?.waitUntil) ctx.waitUntil(cache.put(key, res.clone()));
+    return res;
   }
 
   // /api/tracks/:id/stats
@@ -415,4 +435,111 @@ function json(body, status, cacheControl) {
     status,
     headers: { "content-type": "application/json; charset=utf-8", "cache-control": cacheControl, ...cors() },
   });
+}
+
+// ---------- data export ----------
+// One organized dump: league info, teams and draft, the season table, and per track the
+// Smash standings, race day, stats, every new best by a league pilot, and the hourly saves.
+const teamName = (sponsor) => TEAM_NAMES[sponsor]?.name || sponsor;
+
+async function exportAll(env, now) {
+  const tracks = await Promise.all(TRACKS.map((t) => exportTrack(env, t, now).catch((e) => ({ id: t.id, name: t.name, error: String(e?.message || e) }))));
+  const drafted = new Map(DRAFT_ORDER.map((d) => [d.pilot, d]));
+  return {
+    about: {
+      league: LEAGUE,
+      season: SEASON,
+      exportedAt: new Date(now).toISOString(),
+      site: "https://webleed-s5-leaderboard.blastaa.workers.dev/",
+      notes: [
+        "Times are seconds. Timestamps are UTC (ISO 8601).",
+        "team is the sponsor key used throughout; teamName is the league's team name.",
+        "vdroneLb is the position on the full Velocidrone leaderboard; leagueLb is the place among the league's own pilots (ties share a place).",
+        "Race points per heat: 10 for 1st down to 1 for 10th. Bonus heats: 8 down to 1. Season table: Smash 10..1, Race 20..2, bonus round +3/+2/+1/0.",
+        "newBests lists every first time (debut) and new personal best by a league pilot that the site saw, from its 5-minute checks and the league Discord bot's posts.",
+      ],
+    },
+    teams: TEAMS.map((t, i) => ({
+      team: t.sponsor,
+      teamName: teamName(t.sponsor),
+      color: TEAM_NAMES[t.sponsor]?.color || null,
+      draftOrder: i + 1,
+      captain: t.captain,
+      pilots: [t.captain, ...t.pilots].map((p) => ({ pilot: p, captain: p === t.captain, tryoutRank: DRAFT_RANKS[p] ?? null, draftPosition: drafted.get(p)?.pos ?? null, draftRound: drafted.get(p)?.round ?? null, draftPick: drafted.get(p)?.pick ?? null })),
+    })),
+    draft: DRAFT_ORDER.map((d) => ({ position: d.pos, pilot: d.pilot, captain: d.captain, round: d.round, pick: d.pick, pickedBy: d.by, tryoutRank: DRAFT_RANKS[d.pilot] ?? null })),
+    seasonTable: await overall(env, now),
+    tracks,
+  };
+}
+
+async function exportTrack(env, track, now) {
+  const record = track.leaderboardUrl ? await getRecord(env, track.id) : null;
+  const status = trackStatus(track, record, now);
+  const info = {
+    id: track.id, name: track.name, status, leaderboardUrl: track.leaderboardUrl || null,
+    quad: track.quad?.name || null, opensAt: track.opensAt || null, locksAt: track.locksAt || null, raceDay: track.raceDay || null,
+    lastCheckedAt: record?.fetchedAt || null, lockedAt: record?.lockedAt || null,
+  };
+  if (!record) return { ...info, smash: null, races: null, stats: null, newBests: [], hourly: [] };
+
+  const d = detail(track, record, now);
+  const all = d.standings.teams.flatMap((t) => t.pilots).filter((p) => p.posted && p.time != null).map((p) => p.time);
+  const smash = d.standings.teams.map((t) => ({
+    position: t.position, team: t.sponsor, teamName: teamName(t.sponsor), total: t.total, gap: t.gap ?? null, posted: t.posted,
+    pilots: t.pilots.map((p) => ({
+      pilot: p.name, captain: !!p.captain, posted: !!p.posted, time: p.posted ? p.time : null,
+      vdroneLb: p.lb ?? null, leagueLb: p.posted && p.time != null ? 1 + all.filter((v) => v < p.time).length : null,
+      leagueSetTime: p.override ? { listedTime: p.override.listed, note: p.override.note } : null,
+    })),
+  }));
+
+  const r = await racesFor(env, track, now);
+  const anyRace = r.tierResults.some((t) => t.racesRun > 0);
+  const races = anyRace ? {
+    raceDay: r.raceDay,
+    satOut: Object.fromEntries(r.teams.map((t) => [t.sponsor, t.sitting])),
+    teams: r.teams.map((t) => ({ place: t.place, team: t.sponsor, teamName: teamName(t.sponsor), raceTotal: t.raceTotal, byTier: t.byTier, sitting: t.sitting, lineup: t.lineup, bonusSeed: t.seed, bonusPlace: t.bonusPlace, bonusPoints: t.bonus })),
+    tiers: r.tierResults.map((tr) => ({
+      tier: tr.tier, heatsRun: tr.racesRun,
+      teams: tr.entries.map((e) => ({ place: e.place, team: e.sponsor, teamName: teamName(e.sponsor), pilot: e.pilot, total: e.total })),
+      heats: Array.from({ length: r.racesPerTier }, (_, hi) => ({
+        heat: hi + 1,
+        results: tr.entries.filter((e) => e.times[hi] != null).map((e) => ({ place: e.positions[hi], team: e.sponsor, teamName: teamName(e.sponsor), pilot: e.pilot, time: e.times[hi] === "dnf" ? "DNF" : e.times[hi], points: e.points[hi] })).sort((a, b) => (a.place || 99) - (b.place || 99)),
+      })).filter((h) => h.results.length),
+    })),
+    bonus: r.bonus?.seeds?.length ? {
+      seeds: r.bonus.seeds.map((s, i) => ({ seed: i + 1, team: s, teamName: teamName(s) })),
+      places: r.bonus.places.map((p) => ({ place: p.place, team: p.sponsor, teamName: teamName(p.sponsor), points: p.points })),
+      matches: r.bonus.matches.map((m) => ({
+        match: m.label, teams: m.teams.map(teamName), winner: m.winner ? teamName(m.winner) : null, totals: m.totals ? Object.fromEntries(Object.entries(m.totals).map(([k, v]) => [teamName(k), v])) : null,
+        heats: m.heats.filter((h) => h.run).map((h) => ({ heat: h.heat, score: Object.fromEntries(Object.entries(h.score || {}).map(([k, v]) => [teamName(k), v])), results: h.entries.map((e) => ({ place: e.position, team: e.sponsor, teamName: teamName(e.sponsor), tier: e.tier, pilot: e.pilot, time: e.time === "dnf" ? "DNF" : e.time, points: e.points })) })),
+      })),
+    } : null,
+  } : null;
+
+  const seed = seedFor(track.id, env.STATS_SEEDS);
+  const [history, events] = await Promise.all([getHistory(env, track.id), getEvents(env, track.id)]);
+  const hist = withSeedHistory(seed.history, history);
+  const evts = withSeedEvents(seed.events, events);
+  const teams = record.status === "locked" && record.teams ? record.teams : teamsFor(track);
+  const stats = computeStats(track, hist, evts, teams);
+  const roster = new Map();
+  for (const t of teams) for (const p of [t.captain, ...t.pilots]) { roster.set(norm(p), { pilot: p, team: t.sponsor }); if (ALIASES[norm(p)]) roster.set(ALIASES[norm(p)], { pilot: p, team: t.sponsor }); }
+  const newBests = evts.map((e) => ({ e, who: roster.get(norm(e.name)) })).filter((x) => x.who).sort((a, b) => a.e.at.localeCompare(b.e.at))
+    .map(({ e, who }) => ({ at: e.at, pilot: who.pilot, team: who.team, teamName: teamName(who.team), kind: e.kind === "pb" ? "new best" : "first time", time: e.time, previous: e.prev ?? null, vdroneLb: e.rank ?? null }));
+  const hourly = [...hist].sort((a, b) => a.at.localeCompare(b.at)).map((h) => ({
+    at: h.at, final: !!h.final,
+    teams: (h.teams || []).map(([team, total, posted]) => ({ team, teamName: teamName(team), total, posted })),
+    pilots: h.pilots || {},
+  }));
+  const statLists = {
+    from: stats.from, to: stats.to, newBestsCount: stats.summary.newBests,
+    biggestGrinders: stats.grinders, smallestGrinders: stats.smallestGrinders,
+    teamDepth: stats.depth, topOfEachTier: stats.tiers, tiersAt: stats.tiersAt,
+    mostImprovedVsTryout: stats.sandbaggers, biggestDropsVsTryout: stats.dropoffs,
+    mostImprovedVsDraftPick: stats.pickSandbaggers, biggestDropsVsDraftPick: stats.pickDropoffs,
+    draftPositionVsLb: stats.draftBoard,
+  };
+  return { ...info, smash, races, stats: statLists, newBests, hourly };
 }

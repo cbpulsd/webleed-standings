@@ -297,3 +297,6 @@ footer{color:var(--muted);font-size:12.5px;display:flex;flex-direction:column;ga
 .overall .bonus-team.won th::after{content:" ✓";color:var(--accent)}
 .overall .bonus-note{display:block;font-size:10.5px;color:var(--muted);font-family:var(--mono);font-weight:400;line-height:1.1}
 .tdot{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:7px;vertical-align:baseline;flex:none;box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ink) 18%, transparent)}
+.head-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.export-btn{font-size:12.5px;padding:5px 10px;gap:6px}
+.export-btn:hover{background:var(--sunken)}

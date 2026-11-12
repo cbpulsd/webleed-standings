@@ -779,6 +779,38 @@ test("overall: Week 1 points worked out from the locked Smash standings and the 
   assert.deepEqual(body.teams.slice(0, 2).map((t) => t.sponsor), ["DamagD", "Happymodel"], "Race points: 20 for 1st down to 2 for 10th");
 });
 
+test("export: one JSON file with teams, draft, season table and Week 1 races", async () => {
+  const { readFileSync } = await import("node:fs");
+  const w = JSON.parse(readFileSync(new URL("./fixtures/week1-races.json", import.meta.url), "utf8"));
+  const smashTotals = { Happymodel: 414.844, MEPSKING: 416.569, DamagD: 416.642, "EMAX USA": 421.694, NewBeeDrone: 437.795, WREKD: 439.481, "Fractal Engineering": 452.078, Velocidrone: 455.88, BETAFPV: 465.56, RadioMaster: 466.413 };
+  const standings = { teams: Object.entries(smashTotals).map(([sponsor, total], i) => ({ sponsor, total, position: i + 1, posted: 5, size: 5, pilots: w.order[sponsor].map((name, j) => ({ name, posted: true, time: 70 + i + j, lb: 100 + i })) })) };
+  const env = { STANDINGS: new MemoryKV() };
+  await env.STANDINGS.put("track:1", JSON.stringify({ status: "locked", lockedAt: TRACKS[0].locksAt, fetchedAt: TRACKS[0].locksAt, rows: [], standings, teams: TEAMS }));
+  const at = "2026-11-09T01:00:00Z";
+  await env.STANDINGS.put("races:1:lineup", JSON.stringify({ sitting: w.sitting, updatedAt: at }));
+  for (const [n, results] of Object.entries(w.tiers)) await env.STANDINGS.put(`races:1:tier:${n}`, JSON.stringify({ results, updatedAt: at }));
+  await env.STANDINGS.put("races:1:bonus", JSON.stringify({ results: w.bonus, updatedAt: at }));
+  const res = await route(new Request("https://x.dev/api/export"), new URL("https://x.dev/api/export"), env, ctx(), LOCK + 30 * HOUR, {});
+  assert.match(res.headers.get("content-disposition"), /attachment; filename="webleed-s5-data-2026-11-09\.json"/);
+  const body = await res.json();
+  assert.equal(body.teams.length, 10);
+  assert.equal(body.teams.find((t) => t.team === "RadioMaster").teamName, "Zeeb team 5");
+  assert.equal(body.draft.length, 50);
+  assert.equal(body.tracks.length, 6);
+  const t1 = body.tracks[0];
+  assert.equal(t1.smash[0].teamName, "Loch & Load");
+  assert.equal(t1.smash[0].pilots[0].leagueLb, 1);
+  assert.equal(t1.races.tiers.length, 4);
+  assert.ok(t1.races.tiers.every((t) => t.heats.length === 8 && t.heats.every((h) => h.results.length === 10)));
+  assert.deepEqual(t1.races.teams.slice(0, 2).map((t) => [t.team, t.raceTotal]), [["DamagD", 222], ["Happymodel", 219]]);
+  assert.deepEqual(t1.races.bonus.places.map((p) => p.teamName), ["Emotional DamageD", "Loch & Load", "Five Crowns", "BaguetteMax"]);
+  assert.equal(t1.races.bonus.matches.find((m) => m.match.toLowerCase().includes("3rd")).winner, "Five Crowns");
+  assert.ok(t1.newBests.length > 500 && t1.newBests.every((e) => e.pilot && e.team));
+  assert.ok(t1.hourly.length > 0);
+  assert.equal(body.seasonTable.teams[0].sponsor, "DamagD");
+  assert.equal(body.tracks[2].smash, null, "tracks that haven't opened are listed with no data");
+});
+
 test("Track 2: opens after Track 1 locks, counts only Cetus PRO times, locks Sat Nov 14 11:59 PM ET", async () => {
   const { trackStatus } = await import("../src/sync.js");
   const t2 = TRACKS.find((t) => t.id === 2);

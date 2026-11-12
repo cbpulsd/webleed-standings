@@ -79,6 +79,20 @@ export const SEASON_POINTS = {
   race: [20, 18, 16, 14, 12, 10, 8, 6, 4, 2], // max 20
 };
 
+// The league's team names and colors, by sponsor (public/app.js keeps the same list for the page).
+export const TEAM_NAMES = {
+  "EMAX USA": { name: "BaguetteMax", color: "#00ff40" },
+  MEPSKING: { name: "Five Crowns", color: "#b9f20d" },
+  Happymodel: { name: "Loch & Load", color: "#ff0000" },
+  "Fractal Engineering": { name: "Fractal Engineering", color: "#8000ff" },
+  BETAFPV: { name: "SuperD Troopers", color: "#00ffff" },
+  DamagD: { name: "Emotional DamageD", color: "#ff00ff" },
+  NewBeeDrone: { name: "Wasted Ram", color: "#ffff00" },
+  WREKD: { name: "ÉWREKD", color: "#0000ff" },
+  Velocidrone: { name: "Two Weeks", color: "#ff8000" },
+  RadioMaster: { name: "Zeeb team 5", color: "#ff80ff" },
+};
+
 // Season roster: captain plus four drafted pilots per team.
 export const TEAMS = [
   { sponsor: "EMAX USA", captain: "Raimon Shaigne", pilots: ["FPVRossco", "FakeitFPV", "burnerXIII", "BallHawk"] },
