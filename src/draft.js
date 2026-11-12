@@ -33,6 +33,15 @@ export const DRAFT_PICKS = [
   [37, "caleb.", "redeux"], [38, "Blastaa", "Britchot"], [39, "TMAD", "BrokenParts"], [40, "BenDaOctopus", "Lord_Lanny"],
 ];
 
+// One draft position per league pilot, for comparing with the league LB: captains first
+// (1-10, best captain first by tryout rank), then the 40 snake picks as positions 11-50.
+// In the snake the lowest captain (BenDaOctopus) picks first in odd rounds and last in even ones.
+const CAPTAINS = [...new Set(DRAFT_PICKS.map(([, captain]) => captain))].sort((a, b) => DRAFT_RANKS[a] - DRAFT_RANKS[b]);
+export const DRAFT_ORDER = [
+  ...CAPTAINS.map((pilot, i) => ({ pos: i + 1, pilot, captain: true, round: null, pick: null, by: null })),
+  ...DRAFT_PICKS.map(([pick, by, pilot]) => ({ pos: CAPTAINS.length + pick, pilot, captain: false, round: Math.ceil(pick / CAPTAINS.length), pick, by })),
+];
+
 // Captain availability notes from the draft sheet.
 export const AVAILABILITY = {
   "Fife Flyer": "Out Dec 13",

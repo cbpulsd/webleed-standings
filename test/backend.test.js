@@ -667,6 +667,13 @@ test("stats: tiers within each team and draft spot vs this week", async () => {
   assert.ok(st.sandbaggers.length && st.sandbaggers.every((m, i, a) => m.moved > 0 && (i === 0 || a[i - 1].moved >= m.moved)));
   assert.ok(st.dropoffs.length && st.dropoffs.every((m, i, a) => m.moved < 0 && (i === 0 || a[i - 1].moved <= m.moved)));
   assert.ok(st.sandbaggers.every((m) => m.moved === m.draftPlace - m.weekPlace));
+  assert.equal(st.draftBoard.length, 50);
+  assert.deepEqual(st.draftBoard.slice(0, 2).map((d) => d.pilot), ["Raimon Shaigne", "MonsterDuke"], "captains first, best captain #1");
+  assert.deepEqual([st.draftBoard[10].pilot, st.draftBoard[10].pos, st.draftBoard[10].pick], ["asiy", 11, 1], "pick 1 is #11");
+  assert.equal(st.draftBoard[49].pilot, "Lord_Lanny");
+  assert.ok(st.draftBoard.every((d) => d.lb == null || d.moved === d.pos - d.lb));
+  assert.ok(st.pickSandbaggers.length <= 10 && st.pickSandbaggers.every((m, i, a) => m.moved > 0 && (i === 0 || a[i - 1].moved >= m.moved)));
+  assert.ok(st.pickDropoffs.length <= 10 && st.pickDropoffs.every((m, i, a) => m.moved < 0 && (i === 0 || a[i - 1].moved <= m.moved)));
 });
 
 test("league-set times replace Velocidrone's slower listing (none are set right now)", async () => {

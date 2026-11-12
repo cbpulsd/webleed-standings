@@ -2,7 +2,7 @@
 // and its events (every first time and new personal best).
 
 import { ALIASES, TIME_OVERRIDES } from "./config.js";
-import { DRAFT_RANKS } from "./draft.js";
+import { DRAFT_ORDER, DRAFT_RANKS } from "./draft.js";
 import { norm, overrideSnapshot } from "./standings.js";
 
 const round3 = (n) => Math.round(n * 1000) / 1000;
@@ -98,6 +98,18 @@ export function computeStats(track, history, events, teams) {
   const sandbaggers = moves.filter((m) => m.moved > 0).sort((a, b) => b.moved - a.moved || a.weekPlace - b.weekPlace).slice(0, 10);
   const dropoffs = moves.filter((m) => m.moved < 0).sort((a, b) => a.moved - b.moved || a.weekPlace - b.weekPlace).slice(0, 10);
 
+  // Draft position (captains 1-10, then picks 11-50) vs this week's league LB #, the same
+  // place the Smash tab shows: among rostered pilots with a time, ties sharing a place.
+  const byName = new Map(allPilots.map((p) => [p.pilot, p]));
+  const times = allPilots.filter((p) => p.time != null).map((p) => p.time);
+  const draftBoard = DRAFT_ORDER.filter((d) => byName.has(d.pilot)).map((d) => {
+    const p = byName.get(d.pilot);
+    const lb = p.time != null ? 1 + times.filter((v) => v < p.time).length : null;
+    return { ...d, team: p.team, time: p.time ?? null, lb, moved: lb != null ? d.pos - lb : null };
+  });
+  const pickSandbaggers = draftBoard.filter((d) => d.moved > 0).sort((a, b) => b.moved - a.moved || a.lb - b.lb).slice(0, 10);
+  const pickDropoffs = draftBoard.filter((d) => d.moved < 0).sort((a, b) => a.moved - b.moved || a.lb - b.lb).slice(0, 10);
+
   return {
     track: track.id,
     from: history[0]?.at || events[0]?.at || null,
@@ -112,6 +124,9 @@ export function computeStats(track, history, events, teams) {
     leaguePilots: drafted.length,
     sandbaggers,
     dropoffs,
+    draftBoard,
+    pickSandbaggers,
+    pickDropoffs,
     // Every rostered pilot's first time or new best, for the activity heatmap.
     activity: league.map((e) => [e.at, e.kind === "pb" ? 1 : 0]),
   };

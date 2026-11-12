@@ -1,7 +1,9 @@
 /* Layout: scoreboard stack — track tabs, status strip, view switch, then ranked team blocks with pilot splits */
 :root{
-  /* chart series (categorical slots 1-4, dataviz reference palette) and heat ramp */
-  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300; --s7:#6250d6; --s8:#e34948; --t1:#104281; --t2:#1c5cab; --t3:#2a78d6; --t4:#5598e7; --t5:#86b6ef;
+  /* chart series, tier colors (--t1..--t5, the same on every tab) and heat ramp */
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300; --s7:#6250d6; --s8:#e34948; --t1:#2a78d6; --t2:#eda100; --t3:#e87ba4; --t4:#008300; --t5:#8a90a0;
+  /* league team colors; the pale ones are deepened on white so lines stay visible */
+  --tm-emax:#00ac00; --tm-meps:#70a300; --tm-happy:#ff0000; --tm-fractal:#8000ff; --tm-beta:#00a6a7; --tm-damagd:#ff00ff; --tm-newbee:#9d9900; --tm-wrekd:#0000ff; --tm-velo:#ed7000; --tm-radio:#de61df;
   --h1:#cde2fb; --h2:#9ec5f4; --h3:#6da7ec; --h4:#3987e5; --h5:#256abf; --h6:#184f95;
   --bg:#eef0f5; --surface:#ffffff; --sunken:#e4e7ee; --ink:#131722; --muted:#5a6276; --line:#dce0e9;
   --accent:#cf1f3a; --accent-soft:#fbe5e9; --ok:#1d7a4f; --warn:#a1580c; --dnf:#8a90a0;
@@ -14,7 +16,8 @@
   :root:not([data-theme="light"]){
     --bg:#0c0f16; --surface:#141924; --sunken:#0f131c; --ink:#e8ebf2; --muted:#8e96aa; --line:#242b39;
     --accent:#ff4f69; --accent-soft:#3a1720; --ok:#4cc38a; --warn:#e9a24d; --dnf:#6b7285;
-    --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767; --t1:#cde2fb; --t2:#9ec5f4; --t3:#6da7ec; --t4:#3987e5; --t5:#256abf;
+    --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767; --t1:#3987e5; --t2:#c98500; --t3:#d55181; --t4:#008300; --t5:#6b7285;
+    --tm-emax:#00ff40; --tm-meps:#b9f20d; --tm-happy:#ff0000; --tm-fractal:#8519ff; --tm-beta:#00ffff; --tm-damagd:#ff00ff; --tm-newbee:#ffff00; --tm-wrekd:#0a50ff; --tm-velo:#ff8000; --tm-radio:#ff80ff;
     --h1:#1b2a44; --h2:#184f95; --h3:#1c5cab; --h4:#2a78d6; --h5:#5598e7; --h6:#9ec5f4;
     color-scheme:dark;
   }
@@ -22,7 +25,8 @@
 :root[data-theme="dark"]{
   --bg:#0c0f16; --surface:#141924; --sunken:#0f131c; --ink:#e8ebf2; --muted:#8e96aa; --line:#242b39;
   --accent:#ff4f69; --accent-soft:#3a1720; --ok:#4cc38a; --warn:#e9a24d; --dnf:#6b7285;
-  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767; --t1:#cde2fb; --t2:#9ec5f4; --t3:#6da7ec; --t4:#3987e5; --t5:#256abf;
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767; --t1:#3987e5; --t2:#c98500; --t3:#d55181; --t4:#008300; --t5:#6b7285;
+  --tm-emax:#00ff40; --tm-meps:#b9f20d; --tm-happy:#ff0000; --tm-fractal:#8519ff; --tm-beta:#00ffff; --tm-damagd:#ff00ff; --tm-newbee:#ffff00; --tm-wrekd:#0a50ff; --tm-velo:#ff8000; --tm-radio:#ff80ff;
   --h1:#1b2a44; --h2:#184f95; --h3:#1c5cab; --h4:#2a78d6; --h5:#5598e7; --h6:#9ec5f4;
   color-scheme:dark;
 }
@@ -292,3 +296,4 @@ footer{color:var(--muted);font-size:12.5px;display:flex;flex-direction:column;ga
 .overall .bonus-team th,.overall .bonus-team td{font-weight:600;border-top:1px solid var(--line);background:var(--sunken)}
 .overall .bonus-team.won th::after{content:" ✓";color:var(--accent)}
 .overall .bonus-note{display:block;font-size:10.5px;color:var(--muted);font-family:var(--mono);font-weight:400;line-height:1.1}
+.tdot{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:7px;vertical-align:baseline;flex:none;box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ink) 18%, transparent)}
