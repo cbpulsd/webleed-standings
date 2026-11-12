@@ -20,7 +20,7 @@
     NewBeeDrone: { name: "Wasted Ram", key: "newbee" },
     WREKD: { name: "ÉWREKD", key: "wrekd" },
     Velocidrone: { name: "Two Weeks", key: "velo" },
-    RadioMaster: { name: "Radiomaster", key: "radio" },
+    RadioMaster: { name: "Zeeb team 5", key: "radio" },
   };
   const tname = (sp) => TEAM_LOOK[sp]?.name || sp;
   const tcolor = (sp) => (TEAM_LOOK[sp] ? `var(--tm-${TEAM_LOOK[sp].key})` : "var(--muted)");
