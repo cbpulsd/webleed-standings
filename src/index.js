@@ -361,10 +361,17 @@ function withSeedHistory(seed, mine) {
 }
 
 // Repo-kept events plus any recorded here, without counting the same new best twice.
+// Seed events (from the Discord bot) plus the site's own. A site event the seed already has
+// (same pilot, kind and time) counts once. A site "first time" for a pilot the seed saw earlier
+// is dropped: it's only when the site first saw them (e.g. Track 2 before the Cetus fix).
 function withSeedEvents(seed, mine) {
-  const key = (e) => `${e.name.toLowerCase()}|${e.kind}|${e.time}`;
+  const who = (e) => { const k = norm(e.name); return ALIASES[k] || k; };
+  const key = (e) => `${who(e)}|${e.kind}|${Number(e.time).toFixed(3)}`;
   const seen = new Set(seed.map(key));
-  return [...seed, ...mine.filter((e) => !seen.has(key(e)))].sort((a, b) => a.at.localeCompare(b.at));
+  const firstSeen = new Map();
+  for (const e of seed) if (!firstSeen.has(who(e)) || e.at < firstSeen.get(who(e))) firstSeen.set(who(e), e.at);
+  const keep = (e) => !seen.has(key(e)) && !(e.kind === "debut" && firstSeen.has(who(e)) && firstSeen.get(who(e)) <= e.at);
+  return [...seed, ...mine.filter(keep)].sort((a, b) => a.at.localeCompare(b.at));
 }
 
 async function passwordOk(env, given) {

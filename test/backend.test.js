@@ -644,6 +644,23 @@ test("stats: team totals over time, new bests, biggest grinders", async () => {
   assert.equal(st.activity.length, 5, "the first save has nothing to compare with, so only the 10 PM bests count");
 });
 
+test("seed merge: Discord posts plus the site's own records, each new best once, one first time per pilot", async () => {
+  const ev = (at, name, kind, prev, time) => ({ at, name, kind, prev, time, prevRank: null, rank: 1, userId: null });
+  const env = {
+    STANDINGS: new MemoryKV(),
+    STATS_SEEDS: { 1: { history: [], events: [ev("2026-11-08T02:00:00.000Z", "-Crimson-", "debut", null, 150), ev("2026-11-08T02:30:00.000Z", "-Crimson-", "pb", 150, 140), ev("2026-11-08T03:00:00.000Z", "-Crimson-", "pb", 140, 130)] } },
+  };
+  await env.STANDINGS.put("events:1", JSON.stringify([
+    ev("2026-11-08T07:00:00.000Z", "_-Crimson-_", "debut", null, 130), // when the site first saw them: dropped
+    ev("2026-11-08T09:00:00.000Z", "_-Crimson-_", "pb", 130, 125), // new: kept
+    ev("2026-11-08T03:05:00.000Z", "_-Crimson-_", "pb", 140, 130.0), // the bot already has it: counted once
+  ]));
+  const st = await get(env, "/api/tracks/1/stats", LOCK - HOUR, {});
+  const g = st.grinders.find((p) => p.pilot === "_-Crimson-_");
+  assert.equal(g.pbs, 3);
+  assert.deepEqual(st.activity.map((a) => a[1]), [0, 1, 1, 1], "one first time plus three new bests");
+});
+
 test("stats include the repo-kept Track 1 data from before our history began, without double counting", async () => {
   const env = { STANDINGS: new MemoryKV() };
   const seedEvent = seed1.events.find((e) => e.kind === "pb");
