@@ -20,7 +20,7 @@
 // The page in /public is served as static files and only reads from /api.
 
 import { ADMIN_PASSWORD_SHA256, ALIASES, LATE_LOCK_AFTER_MINUTES, RACES, REFRESH_MINUTES, SEASON_POINTS, LEAGUE, TEAMS, NO_VISIT_REFRESH_BEFORE_LOCK_MINUTES, SEASON, STALE_MINUTES, TEAM_NAMES, TRACKS } from "./config.js";
-import { applyOverrides, computeStandings, norm, quadAllowed } from "./standings.js";
+import { applyOverrides, compactSnapshot, computeStandings, norm, quadAllowed } from "./standings.js";
 import { computeRaces } from "./races.js";
 import { raceStore } from "./racestore.js";
 export { RaceRoom } from "./raceroom.js";
@@ -109,7 +109,8 @@ export async function route(request, url, env, ctx, now, deps = {}) {
     const [history, events, record] = await Promise.all([getHistory(env, track.id), getEvents(env, track.id), track.leaderboardUrl ? getRecord(env, track.id) : null]);
     const teams = record?.status === "locked" && record.teams ? record.teams : teamsFor(track);
     const seed = seedFor(track.id, env.STATS_SEEDS);
-    return json(computeStats(track, withSeedHistory(seed.history, history), withSeedEvents(seed.events, events), teams), 200, record?.status === "locked" ? "public, max-age=3600" : "public, max-age=120");
+    const hist = withLatest(track, record, withSeedHistory(seed.history, history));
+    return json(computeStats(track, hist, withSeedEvents(seed.events, events), teams), 200, record?.status === "locked" ? "public, max-age=3600" : "public, max-age=120");
   }
 
   // /api/tracks/:id/races/live
@@ -361,6 +362,14 @@ function withSeedHistory(seed, mine) {
 }
 
 // Repo-kept events plus any recorded here, without counting the same new best twice.
+// History is saved once an hour; while a track is live, Smash Stats also gets the latest
+// 5-minute check as its last point, so its times and places match the Smash tab.
+function withLatest(track, record, hist) {
+  if (!record?.rows || record.status === "locked" || !record.fetchedAt) return hist;
+  if (hist.length && hist[hist.length - 1].at >= record.fetchedAt) return hist;
+  return [...hist, compactSnapshot(standingsFor(track, record.rows), record.fetchedAt)];
+}
+
 // Seed events (from the Discord bot) plus the site's own. A site event the seed already has
 // (same pilot, kind and time) counts once. A site "first time" for a pilot the seed saw earlier
 // is dropped: it's only when the site first saw them (e.g. Track 2 before the Cetus fix).
@@ -530,7 +539,7 @@ async function exportTrack(env, track, now) {
   const hist = withSeedHistory(seed.history, history);
   const evts = withSeedEvents(seed.events, events);
   const teams = record.status === "locked" && record.teams ? record.teams : teamsFor(track);
-  const stats = computeStats(track, hist, evts, teams);
+  const stats = computeStats(track, withLatest(track, record, hist), evts, teams);
   const roster = new Map();
   for (const t of teams) for (const p of [t.captain, ...t.pilots]) { roster.set(norm(p), { pilot: p, team: t.sponsor }); if (ALIASES[norm(p)]) roster.set(ALIASES[norm(p)], { pilot: p, team: t.sponsor }); }
   const newBests = evts.map((e) => ({ e, who: roster.get(norm(e.name)) })).filter((x) => x.who).sort((a, b) => a.e.at.localeCompare(b.e.at))

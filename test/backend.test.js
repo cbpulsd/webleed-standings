@@ -644,6 +644,22 @@ test("stats: team totals over time, new bests, biggest grinders", async () => {
   assert.equal(st.activity.length, 5, "the first save has nothing to compare with, so only the 10 PM bests count");
 });
 
+test("stats: times and places follow the latest check, not just the hourly save", async () => {
+  const env = { STANDINGS: new MemoryKV(), STATS_SEEDS: {} };
+  const site = fakeSite([]);
+  const emax = TEAMS[0];
+  const five = [emax.captain, ...emax.pilots];
+  site.rows = five.map((n, i) => [i + 1, (80 + i).toFixed(3), n]);
+  await runSchedule(env, LOCK - 3 * HOUR, { fetchImpl: site.fetch, retryDelayMs: 0 }); // on the hour: saved
+  site.rows = five.map((n, i) => [i + 1, (i === 4 ? 70 : 80 + i).toFixed(3), n]);
+  await runSchedule(env, LOCK - 3 * HOUR + 5 * 60_000, { fetchImpl: site.fetch, retryDelayMs: 0 }); // 5 minutes later
+  const st = await get(env, "/api/tracks/1/stats", LOCK - 3 * HOUR + 6 * 60_000, {});
+  const d = st.depth.find((t) => t.sponsor === "EMAX USA");
+  assert.equal(d.pilots[0].pilot, five[4], "the 5-minute check's faster time puts them in tier 1");
+  assert.equal(d.pilots[0].time, 70);
+  assert.equal(st.teams.find((t) => t.sponsor === "EMAX USA").finalTotal, 80 + 81 + 82 + 83 + 70);
+});
+
 test("seed merge: Discord posts plus the site's own records, each new best once, one first time per pilot", async () => {
   const ev = (at, name, kind, prev, time) => ({ at, name, kind, prev, time, prevRank: null, rank: 1, userId: null });
   const env = {
