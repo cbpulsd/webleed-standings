@@ -14,7 +14,7 @@
     "EMAX USA": { name: "BaguetteMax", key: "emax" },
     MEPSKING: { name: "Five Crowns", key: "meps" },
     Happymodel: { name: "Loch & Load", key: "happy" },
-    "Fractal Engineering": { name: "Fractal Engineering", key: "fractal" },
+    "Fractal Engineering": { name: "What the Frac-tal?", key: "fractal" },
     BETAFPV: { name: "SuperD Troopers", key: "beta" },
     DamagD: { name: "Emotional DamageD", key: "damagd" },
     NewBeeDrone: { name: "Wasted Ram", key: "newbee" },

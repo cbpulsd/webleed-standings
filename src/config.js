@@ -84,7 +84,7 @@ export const TEAM_NAMES = {
   "EMAX USA": { name: "BaguetteMax", color: "#00ff40" },
   MEPSKING: { name: "Five Crowns", color: "#b9f20d" },
   Happymodel: { name: "Loch & Load", color: "#ff0000" },
-  "Fractal Engineering": { name: "Fractal Engineering", color: "#8000ff" },
+  "Fractal Engineering": { name: "What the Frac-tal?", color: "#8000ff" },
   BETAFPV: { name: "SuperD Troopers", color: "#00ffff" },
   DamagD: { name: "Emotional DamageD", color: "#ff00ff" },
   NewBeeDrone: { name: "Wasted Ram", color: "#ffff00" },
