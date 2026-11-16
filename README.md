@@ -2,6 +2,8 @@
 
 Team standings for the weBLEEDfpv Velocidrone league: each team's combined time on the current track, with one tab per track.
 
+The league rules are the [Season V Official Rulebook](https://docs.google.com/document/d/1rXPErabnHDVpiHNYHI6v77g4lR_J73vU/edit). A dated preservation copy for reference lives in [docs/rulebook](docs/rulebook/).
+
 ## How it works
 
 - **Backend** (`src/`, a Cloudflare Worker):
