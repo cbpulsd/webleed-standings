@@ -29,7 +29,11 @@ const MAX_HEAT = 14;
 
 export const copilotEvent = (track) => track.copilot?.event || COPILOT.event(track);
 // Races are on Sundays in November/December: Eastern Standard Time (UTC-5).
-export const raceStart = (track) => Date.parse(`${track.raceDay}T05:00:00Z`);
+// Checking starts at COPILOT.startEastern on race day (half an hour before the 5 PM start).
+export const raceStart = (track) => {
+  const [h, m] = (track.copilot?.startEastern || COPILOT.startEastern).split(":").map(Number);
+  return Date.parse(`${track.raceDay}T00:00:00Z`) + ((h + 5) * 60 + m) * 60_000;
+};
 export const raceWindow = (track) => ({ start: raceStart(track), end: raceStart(track) + COPILOT.windowHours * 3_600_000 });
 const etDate = (ms) => new Date(ms - 5 * 3_600_000).toISOString().slice(0, 10);
 const clock = (ms) => new Date(ms - 5 * 3_600_000).toISOString().slice(11, 16) + " ET";

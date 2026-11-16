@@ -76,7 +76,7 @@ function fakeCopilot(week, { step = LAST_SLOT, selected, date, overrides, tweak,
   return { fetchImpl, calls };
 }
 
-const NOW2 = Date.parse("2026-11-15T21:00:00Z");
+const NOW2 = Date.parse("2026-11-15T22:00:00Z"); // 5 PM ET, race day
 const NOW1 = Date.parse("2026-11-08T23:00:00Z");
 
 async function racesOf(env, track) {
@@ -224,6 +224,12 @@ test("a track that isn't locked, Copilot being down, and the race-day window", a
   r = await copilotTick(env, track, Date.parse("2026-11-14T12:00:00Z"), { store, fetchImpl: fake.fetchImpl });
   assert.equal(r.state.phase, "scheduled");
   assert.equal(fake.calls.length, 0);
+  r = await copilotTick(env, track, Date.parse("2026-11-15T21:29:00Z"), { store, fetchImpl: fake.fetchImpl });
+  assert.equal(r.state.phase, "scheduled", "race day, but before 4:30 PM ET");
+  assert.equal(fake.calls.length, 0);
+  assert.deepEqual(await copilotSchedule(env, Date.parse("2026-11-15T21:25:00Z"), { fetchImpl: fake.fetchImpl }), [], "the schedule doesn't start it before 4:30");
+  r = await copilotTick(env, track, Date.parse("2026-11-15T21:30:00Z"), { store, fetchImpl: fake.fetchImpl });
+  assert.equal(r.state.phase, "racing", "from 4:30 PM ET");
   r = await copilotTick(env, track, Date.parse("2026-11-16T06:30:00Z"), { store, fetchImpl: fake.fetchImpl });
   assert.equal(r.state.phase, "racing");
   assert.equal(r.again, true);

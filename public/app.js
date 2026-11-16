@@ -355,7 +355,7 @@
 
   // ---------- race-day import from Copilot ----------
   const IMPORT_PHASE = {
-    scheduled: "Starts on race day", idle: "Not started yet", waiting: "Waiting for the first heat",
+    scheduled: "Starts at 4:30 PM ET on race day", idle: "Not started yet", waiting: "Waiting for the first heat",
     racing: "Importing heats as they're flown", checking: "Every heat is in; checking against Copilot",
     verified: "Done: every time matches Copilot", blocked: "Blocked (see below)", expired: "Stopped", off: "Off", none: "No race day",
   };
@@ -395,7 +395,7 @@
       </div>
       <dl class="copilot-status">${rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>
       ${flags.length ? `<ul class="copilot-flags">${flags.map((f) => `<li data-level="${f.level}">${esc(f.message)}</li>`).join("")}</ul>` : `<p class="sit-hint">No issues so far.</p>`}
-      <p class="sit-hint">On race day the site checks Copilot once a minute and fills in sit-outs and every heat. Anything typed in by hand on this page is kept, even if Copilot differs. It stops once every heat and bonus match is in and matches Copilot's own results.</p>
+      <p class="sit-hint">On race day the site checks Copilot once a minute from 4:30 PM ET (races start at 5) and fills in sit-outs and every heat. Anything typed in by hand on this page is kept, even if Copilot differs. It stops once every heat and bonus match is in and matches Copilot's own results.</p>
     </div>`;
   }
 

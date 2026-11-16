@@ -122,7 +122,8 @@ export const COPILOT = {
   base: "http://www.avgjj.com:59000",
   event: (track) => `WB-S5-R${track.id}`,
   pollSeconds: 60,
-  windowHours: 72, // from race-day midnight Eastern; races have no fixed end time
+  startEastern: "16:30", // races start at 5 PM Eastern; checking begins half an hour before
+  windowHours: 72, // from the start above; races have no fixed end time
   timeoutMs: 15_000,
   failuresBeforeFlag: 3, // a flag after this many failed checks in a row
 };
