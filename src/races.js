@@ -16,6 +16,7 @@ import { BONUS_DECISIONS, RACES } from "./config.js";
 export const lineupKey = (trackId) => `races:${trackId}:lineup`;
 export const tierKey = (trackId, tier) => `races:${trackId}:tier:${tier}`;
 export const bonusKey = (trackId) => `races:${trackId}:bonus`;
+export const copilotKey = (trackId) => `races:${trackId}:copilot`;
 export const BONUS_MATCHES = ["semi1", "semi2", "final", "third"];
 
 const raceTime = (v) => (v === "dnf" ? "dnf" : typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null);
@@ -29,12 +30,13 @@ export function positionsFor(times) {
 
 export async function loadRaceDocs(env, trackId, cfg = RACES) {
   const tiers = Array.from({ length: cfg.tiers }, (_, i) => i + 1);
-  const [lineup, bonus, ...tierDocs] = await Promise.all([
+  const [lineup, bonus, copilot, ...tierDocs] = await Promise.all([
     env.STANDINGS.get(lineupKey(trackId), "json"),
     env.STANDINGS.get(bonusKey(trackId), "json"),
+    env.STANDINGS.get(copilotKey(trackId), "json"),
     ...tiers.map((t) => env.STANDINGS.get(tierKey(trackId, t), "json")),
   ]);
-  return { lineup: lineup || {}, bonus: bonus || {}, tiers: Object.fromEntries(tiers.map((t, i) => [t, tierDocs[i] || {}])) };
+  return { lineup: lineup || {}, bonus: bonus || {}, copilot: copilot || null, tiers: Object.fromEntries(tiers.map((t, i) => [t, tierDocs[i] || {}])) };
 }
 
 // Each team's pilots, fastest Smash time first (from the track's standings), else roster order.
@@ -106,7 +108,9 @@ export function computeRaces(track, docs, teams, standings, cfg = RACES) {
     "raceTotal"
   );
   const regularDone = tierResults.every((t) => t.racesRun === cfg.racesPerTier);
-  const bonus = cfg.bonus ? computeBonus(regular, lineups, docs?.bonus?.results || {}, cfg, regularDone, BONUS_DECISIONS[track.id] || {}) : null;
+  // Tie decisions: the league's (config) win over ones read from Copilot on race day.
+  const decisions = { ...(docs?.copilot?.decisions || {}), ...(BONUS_DECISIONS[track.id] || {}) };
+  const bonus = cfg.bonus ? computeBonus(regular, lineups, docs?.bonus?.results || {}, cfg, regularDone, decisions) : null;
   const bonusOf = new Map((bonus?.places || []).map((p) => [p.sponsor, p]));
   const teamTotals = rank(
     regular.map((t) => {

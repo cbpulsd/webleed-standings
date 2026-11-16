@@ -115,6 +115,18 @@ export const TEAMS = [
   { sponsor: "RadioMaster", captain: "BenDaOctopus", pilots: ["asiy", "ZAR", "ZEBRA_THREE", "Lord_Lanny"] },
 ];
 
+// Race-day import from the league's Copilot timing site (a pilot loaded into the sim uploads
+// every heat). On race day the RaceRoom checks it once a minute until every heat and bonus
+// match is in and the end-of-day check against Copilot's own results passes.
+export const COPILOT = {
+  base: "http://www.avgjj.com:59000",
+  event: (track) => `WB-S5-R${track.id}`,
+  pollSeconds: 60,
+  windowHours: 72, // from race-day midnight Eastern; races have no fixed end time
+  timeoutMs: 15_000,
+  failuresBeforeFlag: 3, // a flag after this many failed checks in a row
+};
+
 // League decisions for tied bonus matches (equal heat points after 3 heats), by track and
 // match id (semi1, semi2, final, third): the sponsor the league gave the match to.
 export const BONUS_DECISIONS = {

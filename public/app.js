@@ -353,6 +353,52 @@
       ${b.matches.map((m) => bonusMatch(m, b, edit)).join("")}`;
   }
 
+  // ---------- race-day import from Copilot ----------
+  const IMPORT_PHASE = {
+    scheduled: "Starts on race day", idle: "Not started yet", waiting: "Waiting for the first heat",
+    racing: "Importing heats as they're flown", checking: "Every heat is in; checking against Copilot",
+    verified: "Done: every time matches Copilot", blocked: "Blocked (see below)", expired: "Stopped", off: "Off", none: "No race day",
+  };
+  const clockOf = (iso) => (iso ? timeFmt.format(new Date(iso)) : "–");
+  const importIssues = (im) => (im?.flags || []).filter((f) => f.level === "warn" || f.level === "error");
+
+  // Any problem the import found shows at the top of the Races tab.
+  function importNotice(im) {
+    const issues = importIssues(im);
+    if (!issues.length) return "";
+    const err = issues.some((f) => f.level === "error");
+    return `<div class="notice" data-level="${err ? "error" : "warn"}" role="status"><b>${err ? "Race day issue" : "Race day notice"}</b><ul>${issues.map((f) => `<li>${esc(f.message)}</li>`).join("")}</ul></div>`;
+  }
+  function importLine(im) {
+    if (!im || im.enabled === false || ["none", "off", "scheduled", "idle"].includes(im.phase)) return "";
+    if (im.phase === "verified") return ` Times came in from Copilot and were checked against its results${im.check ? ` (all ${im.check.checked})` : ""}.`;
+    return ` Times come in from Copilot automatically (last checked ${clockOf(im.lastPollAt)}).`;
+  }
+  const copilotMeta = (im) => {
+    const n = importIssues(im).length;
+    return `${esc(im.enabled === false ? "Off" : IMPORT_PHASE[im.phase] || "Not started yet")}${n ? ` · ${n} issue${n === 1 ? "" : "s"}` : ""}`;
+  };
+  function copilotPanel(im) {
+    const flags = im.flags || [];
+    const rows = [
+      ["Status", im.enabled === false ? "Off" : IMPORT_PHASE[im.phase] || "Not started yet"],
+      ["Copilot event", im.event ? `${im.event}${im.selected && im.selected !== im.event ? ` (Copilot has ${im.selected} selected)` : ""}` : "–"],
+      ["Last checked", clockOf(im.lastPollAt)],
+      ["Last new time", clockOf(im.lastChangeAt)],
+      ["Imported", `${im.imported || 0} entries`],
+      ["Final check", im.check ? `${im.check.checked} times, ${im.check.differences} different (${clockOf(im.check.at)})` : "After the last heat"],
+    ];
+    return `<div class="copilot" id="admCopilot">
+      <div class="copilot-controls">
+        <label class="switch"><input type="checkbox" data-kind="copilot-on"${im.enabled === false ? "" : " checked"}> Auto-import from Copilot</label>
+        <button type="button" data-kind="copilot-run">Check now</button>
+      </div>
+      <dl class="copilot-status">${rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>
+      ${flags.length ? `<ul class="copilot-flags">${flags.map((f) => `<li data-level="${f.level}">${esc(f.message)}</li>`).join("")}</ul>` : `<p class="sit-hint">No issues so far.</p>`}
+      <p class="sit-hint">On race day the site checks Copilot once a minute and fills in sit-outs and every heat. Anything typed in by hand on this page is kept, even if Copilot differs. It stops once every heat and bonus match is in and matches Copilot's own results.</p>
+    </div>`;
+  }
+
   function renderRaces() {
     const el = $("viewRaces");
     const r = state.races;
@@ -375,7 +421,8 @@
         </table></div>`)).join("");
 
     el.innerHTML = `
-      <p class="races-note"><b>Race day: ${esc(raceDayText(d))}.</b> Each team races four of its five pilots, one per tier, and sits one. Every tier runs ${d.racesPerTier} races. Points by finishing position: ${pointsLine}. In each tier, a race shows the points earned and the pilot's 3-lap time underneath.${anyResults ? "" : " Lineups and results appear here on race day."}${d.live ? ' <span class="live-pill">Updates live</span>' : ""}</p>
+      <p class="races-note"><b>Race day: ${esc(raceDayText(d))}.</b> Each team races four of its five pilots, one per tier, and sits one. Every tier runs ${d.racesPerTier} races. Points by finishing position: ${pointsLine}. In each tier, a race shows the points earned and the pilot's 3-lap time underneath.${anyResults ? "" : " Lineups and results appear here on race day."}${importLine(d.import)}${d.live ? ' <span class="live-pill">Updates live</span>' : ""}</p>
+      ${importNotice(d.import)}
       ${fold("summary", "Team race points", leaderOf(d.teams), summary)}
       ${tierTables}
       ${d.bonus ? fold("bonus", "Bonus round", bonusMeta(d.bonus), bonusSection(d)) : ""}
@@ -933,6 +980,7 @@
         <span class="admin-actions"><span class="signed-in">Signed in until ${esc(dayFmt.format(new Date(adm.pass.expiresAt)))}</span><a href="#track-${adm.id}">Back to Races</a><button type="button" id="signOut">Sign out</button></span>
       </div>
       <p class="races-note">Times are in seconds (45.123 or 1:05.432). Type <b>DNF</b> for a pilot who didn't finish, or clear the box to remove a time. The fastest time in each race finishes 1st.</p>
+      ${d.import ? fold("adm-copilot", "Copilot auto-import", copilotMeta(d.import), copilotPanel(d.import)) : ""}
       ${fold("adm-sit", "Who sits out", `${picked} of ${d.teams.length} picked`, `<p class="sit-hint">Pilots are listed in their team's Smash order for this track. The four who race fill Tiers 1–4 in that order.</p><div class="sit-grid">${sitCards}</div>`)}
       ${fold("adm-summary", "Team race points", leaderOf(d.teams), `<div id="admSummary">${raceSummaryTable(d)}</div>`)}
       ${tierTables}
@@ -1011,6 +1059,10 @@
     }
     const m1 = root.querySelector('[data-meta="adm-summary"]');
     if (m1) m1.innerHTML = leaderOf(d.teams);
+    const cp = root.querySelector("#admCopilot");
+    if (cp && d.import && !cp.contains(document.activeElement)) cp.outerHTML = copilotPanel(d.import);
+    const mc = root.querySelector('[data-meta="adm-copilot"]');
+    if (mc && d.import) mc.innerHTML = copilotMeta(d.import);
     const m2 = root.querySelector('[data-meta="adm-sit"]');
     if (m2) m2.textContent = `${d.teams.filter((t) => t.sitting).length} of ${d.teams.length} picked`;
   }
@@ -1095,6 +1147,31 @@
       renderGate(`Couldn't check the password (${err.message}).`);
     }
   });
+  // Copilot auto-import: on/off and "Check now".
+  async function copilotAction(body, button) {
+    if (button) { button.disabled = true; button.textContent = "Checking…"; }
+    try {
+      const res = await adminApi(`/tracks/${adm.id}/races/copilot`, { method: "POST", body: JSON.stringify(body) });
+      if (res.status === 403) return signedOut("Your sign-in has expired. Please enter the password again.");
+      const out = await res.json();
+      if (!res.ok) throw new Error(out.error || `HTTP ${res.status}`);
+      if (isAdmin()) { adm.error = null; adm.data = { ...out, satBefore: adm.satBefore }; syncAdmin(); renderSaveState(); }
+    } catch (err) {
+      adm.error = `Couldn't reach the Copilot import (${err.message}).`;
+      renderSaveState();
+    } finally {
+      const b = $("viewAdmin").querySelector('[data-kind="copilot-run"]');
+      if (b) { b.disabled = false; b.textContent = "Check now"; }
+    }
+  }
+  $("viewAdmin").addEventListener("click", (e) => {
+    const b = e.target.closest?.('[data-kind="copilot-run"]');
+    if (b) copilotAction({ run: true }, b);
+  });
+  $("viewAdmin").addEventListener("change", (e) => {
+    if (e.target.dataset?.kind !== "copilot-on") return;
+    copilotAction({ enabled: e.target.checked, ...(e.target.checked ? { run: true } : {}) });
+  });
   $("viewAdmin").addEventListener("click", (e) => {
     if (e.target.id !== "signOut") return;
     signedOut("Signed out.");
@@ -1110,7 +1187,7 @@
 
   // Which race sections are open. Team race points starts open, tiers closed;
   // a viewer's choice is kept when the data refreshes.
-  const foldState = { summary: true, bonus: true, "adm-sit": true, "adm-summary": true, "adm-bonus": true };
+  const foldState = { summary: true, bonus: true, "adm-copilot": true, "adm-sit": true, "adm-summary": true, "adm-bonus": true };
   const isOpen = (key) => foldState[key] ?? false;
   for (const id of ["viewRaces", "viewAdmin"]) $(id).addEventListener("toggle", (e) => {
     const k = e.target?.dataset?.fold;

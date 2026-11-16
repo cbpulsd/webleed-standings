@@ -25,6 +25,7 @@ const SCENARIOS = {
   stats: { label: "Smash Stats (real Track 1 week)", at: () => LOCK + 26 * HOUR, view: "stats", note: "Smash Stats tab with the real Track 1 week: hourly team totals and every new best from Nov 2 to the lock." },
   racestats: { label: "Race Stats (real Week 1)", at: () => LOCK + 26 * HOUR, view: "racestats", note: "Race Stats tab with the real Week 1 race day: sit-outs, tiers and all 320 heat times." },
   week1: { label: "Races, real Week 1 + bonus round", at: () => LOCK + 26 * HOUR, view: "races", note: "The real Week 1 race day with the bonus round. Use the Race director button at the bottom of the Races tab to try editing (password: webleedadmin). Edits stay in this preview." },
+  copilot: { label: "Race day notices (example)", at: () => LOCK + 26 * HOUR, view: "races", note: "Week 1's races with made-up race-day notices from the Copilot import, to show how issues appear. The Race director page (password: webleedadmin) shows the import panel." },
   race: { label: "Race day example", at: () => LOCK + 15 * HOUR, view: "races", note: "Made-up lineups and race times, to show how the Races tab fills in. Use the Race director button at the bottom of the Races tab to try editing (password: webleedadmin). Edits stay in this preview." },
 };
 
@@ -52,7 +53,7 @@ let env = null;
 async function setup(name) {
   const target = SCENARIOS[name].at();
   env = { STANDINGS: new MemoryKV() };
-  const real = (name === "stats" || name === "racestats" || name === "week1") && window.STATS_FIXTURE;
+  const real = (name === "stats" || name === "racestats" || name === "week1" || name === "copilot") && window.STATS_FIXTURE;
   const fetchImpl = async () => new Response(page(real ? window.STATS_FIXTURE.finalRows : sample.rows), { status: 200 });
   // Two hourly runs before the target moment.
   const lastHour = Math.floor(target / HOUR) * HOUR;
@@ -67,6 +68,19 @@ async function setup(name) {
       for (const [n, results] of Object.entries(window.STATS_FIXTURE.races.tiers)) await env.STANDINGS.put(`races:1:tier:${n}`, JSON.stringify({ results, updatedAt: at }));
       if (window.STATS_FIXTURE.races.bonus) await env.STANDINGS.put("races:1:bonus", JSON.stringify({ results: window.STATS_FIXTURE.races.bonus, updatedAt: at }));
     }
+  }
+  if (name === "copilot") {
+    const t = (m) => new Date(LOCK + 20 * HOUR + m * 60_000).toISOString();
+    await env.STANDINGS.put("races:1:copilot", JSON.stringify({
+      enabled: true, phase: "checking", event: "WB-S5-R1", selected: "WB-S5-R1", startedAt: t(-180), lastPollAt: t(0), lastChangeAt: t(-6), cells: {}, decisions: {},
+      check: { at: t(0), checked: 416, differences: 1 },
+      flags: [
+        { level: "error", code: "tie-third", message: "3rd place is tied 54–54 (Wasted Ram v Zeeb team 5) and Copilot doesn't show a clear winner. It needs a league decision before the bonus places count." },
+        { level: "warn", code: "hand-edits", message: "1 time was typed in by hand and differs from Copilot, so the hand-entered one was kept: Tier 4 race 1, Two Weeks (here 126.000, Copilot 127.077)." },
+        { level: "error", code: "verify", message: "Final check: 1 of 416 times differ from Copilot's results: Tier 4 race 1, Two Weeks (here 126.000, Copilot 127.077)." },
+        { level: "info", code: "selected", message: "Copilot's selected event matched (WB-S5-R1) all race day." },
+      ],
+    }));
   }
   if (name === "race") {
     const sample = sampleRaces();

@@ -16,6 +16,7 @@
 //   PATCH /api/admin/tracks/:id/races/lineup     -> { sitting: { "<sponsor>": "<pilot>" | null } }
 //   PATCH /api/admin/tracks/:id/races/tiers/:n   -> { results: { "<race>": { "<sponsor>": "45.123" | "DNF" | null } } }
 //   PATCH /api/admin/tracks/:id/races/bonus      -> { results: { "<match>": { "<heat>": { "<sponsor>": { "<tier>": "45.123" | "DNF" | null } } } } }
+//   POST  /api/admin/tracks/:id/races/copilot    -> { enabled?: true|false, run?: true }  Copilot auto-import on/off, check now
 //
 // The page in /public is served as static files and only reads from /api.
 
@@ -23,6 +24,7 @@ import { ADMIN_PASSWORD_SHA256, ALIASES, LATE_LOCK_AFTER_MINUTES, RACES, REFRESH
 import { applyOverrides, compactSnapshot, computeStandings, norm, quadAllowed } from "./standings.js";
 import { computeRaces } from "./races.js";
 import { raceStore } from "./racestore.js";
+import { publicImport, raceWindow } from "./copilot.js";
 export { RaceRoom } from "./raceroom.js";
 import { fetchGameLeaderboard, gameRows } from "./gameapi.js";
 import { trackIdFromUrl } from "./leaderboard.js";
@@ -49,6 +51,7 @@ export default {
     ctx.waitUntil(
       runSchedule(env, now).then((results) => console.log(JSON.stringify({ scheduled: new Date(event.scheduledTime).toISOString(), results: results.map(({ record, ...r }) => r) })))
     );
+    ctx.waitUntil(copilotSchedule(env, now).catch((err) => console.error("copilot schedule", err)));
   },
 };
 
@@ -140,6 +143,18 @@ export async function route(request, url, env, ctx, now, deps = {}) {
 
     if (request.method === "GET" && parts.length === 5) {
       return json({ ...(await racesFor(env, track, now)), satBefore: await satBefore(env, track) }, 200, "no-store");
+    }
+    if (request.method === "POST" && parts[5] === "copilot" && parts.length === 6) {
+      const body = await request.json().catch(() => ({}));
+      const store = raceStore(env, track.id);
+      const opts = { track, now, fetchImpl: deps.fetchImpl };
+      try {
+        if (typeof body.enabled === "boolean") await store.copilot("config", { ...opts, enabled: body.enabled });
+        if (body.run) await store.copilot("run", opts);
+      } catch (err) {
+        return json({ error: String(err?.message || err) }, 502, "no-store");
+      }
+      return json(await racesFor(env, track, now), 200, "no-store");
     }
     if (request.method === "PATCH" && (parts[5] === "lineup" || parts[5] === "tiers" || parts[5] === "bonus")) {
       const body = await request.json().catch(() => null);
@@ -394,7 +409,21 @@ async function racesFor(env, track, now) {
   const store = raceStore(env, track.id);
   const [docs, record] = await Promise.all([store.docs(), track.leaderboardUrl ? getRecord(env, track.id) : null]);
   const standings = record ? (record.status === "locked" ? applyOverrides(record.standings, overridesFor(track)) : standingsFor(track, record.rows)) : null;
-  return { track: track.id, live: store.live, version: docs.version ?? null, ...computeRaces(track, docs, teamsFor(track), standings) };
+  return { track: track.id, live: store.live, version: docs.version ?? null, ...computeRaces(track, docs, teamsFor(track), standings), import: track.raceDay ? publicImport(docs.copilot) : null };
+}
+
+// Every 5 minutes: on race day (and until its results are in), make sure each track's
+// Copilot import is checking once a minute. Without the Durable Object (tests) it checks here.
+export async function copilotSchedule(env, now, deps = {}) {
+  const out = [];
+  for (const track of TRACKS) {
+    if (!track.raceDay || !track.leaderboardUrl) continue;
+    const { start, end } = raceWindow(track);
+    if (now < start || now > end + 3_600_000) continue;
+    const store = raceStore(env, track.id);
+    out.push({ id: track.id, ...(await store.copilot("kick", { track, now, fetchImpl: deps.fetchImpl })) });
+  }
+  return out;
 }
 
 // Who each team sat out in the other weeks: { "<sponsor>": { "<pilot>": [weekIds] } }
