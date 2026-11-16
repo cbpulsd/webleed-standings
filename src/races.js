@@ -11,7 +11,7 @@
 // Lineups aren't stored: once a team's sit-out pilot is picked, its other four pilots
 // fill tiers 1-4 in the team's Smash order for this track (fastest first).
 
-import { RACES } from "./config.js";
+import { BONUS_DECISIONS, RACES } from "./config.js";
 
 export const lineupKey = (trackId) => `races:${trackId}:lineup`;
 export const tierKey = (trackId, tier) => `races:${trackId}:tier:${tier}`;
@@ -106,7 +106,7 @@ export function computeRaces(track, docs, teams, standings, cfg = RACES) {
     "raceTotal"
   );
   const regularDone = tierResults.every((t) => t.racesRun === cfg.racesPerTier);
-  const bonus = cfg.bonus ? computeBonus(regular, lineups, docs?.bonus?.results || {}, cfg, regularDone) : null;
+  const bonus = cfg.bonus ? computeBonus(regular, lineups, docs?.bonus?.results || {}, cfg, regularDone, BONUS_DECISIONS[track.id] || {}) : null;
   const bonusOf = new Map((bonus?.places || []).map((p) => [p.sponsor, p]));
   const teamTotals = rank(
     regular.map((t) => {
@@ -138,7 +138,7 @@ export function computeRaces(track, docs, teams, standings, cfg = RACES) {
 }
 
 // The bonus round, from the regular race points (ranked) and its saved heat times.
-export function computeBonus(ranked, lineups, results, cfg = RACES, regularDone = true) {
+export function computeBonus(ranked, lineups, results, cfg = RACES, regularDone = true, decisions = {}) {
   const { teams: size, heats: heatCount, points: placePoints } = cfg.bonus;
   const seeds = ranked.filter((t) => t.raceTotal != null).slice(0, size).map((t) => t.sponsor);
   const tierIds = Array.from({ length: cfg.tiers }, (_, i) => i + 1);
@@ -159,8 +159,10 @@ export function computeBonus(ranked, lineups, results, cfg = RACES, regularDone 
     const totals = Object.fromEntries(sides.map((sp) => [sp, heats.reduce((s, h) => s + h.score[sp], 0)]));
     const complete = heats.every((h) => h.complete);
     const tied = complete && totals[a] === totals[b];
-    const winner = complete && !tied ? (totals[a] > totals[b] ? a : b) : null;
-    return { id, label, teams: sides, heats, totals, winner, loser: winner ? (winner === a ? b : a) : null, complete, tied };
+    // A tie goes to whoever the league decided (BONUS_DECISIONS); otherwise it stays open.
+    const decided = tied && sides.includes(decisions[id]?.winner) ? decisions[id] : null;
+    const winner = complete && !tied ? (totals[a] > totals[b] ? a : b) : decided ? decided.winner : null;
+    return { id, label, teams: sides, heats, totals, winner, loser: winner ? (winner === a ? b : a) : null, complete, tied, decision: decided ? decided.note || "league decision" : null };
   }
 
   const ready = seeds.length === size;

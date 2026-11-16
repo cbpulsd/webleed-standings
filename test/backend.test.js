@@ -812,6 +812,26 @@ test("overall: Week 1 points worked out from the locked Smash standings and the 
   assert.deepEqual(body.teams.slice(0, 2).map((t) => t.sponsor), ["DamagD", "Happymodel"], "Race points: 20 for 1st down to 2 for 10th");
 });
 
+test("bonus: a tied match goes to the league's decision, and stays open without one", async () => {
+  const { computeBonus } = await import("../src/races.js");
+  const ranked = ["A", "B", "C", "D"].map((sponsor, i) => ({ sponsor, raceTotal: 100 - i }));
+  const lineups = Object.fromEntries(["A", "B", "C", "D"].map((sp) => [sp, { 1: sp + "1", 2: sp + "2", 3: sp + "3", 4: sp + "4" }]));
+  const heat = (x, y, xs, ys) => ({ [x]: Object.fromEntries(xs.map((t, i) => [i + 1, t])), [y]: Object.fromEntries(ys.map((t, i) => [i + 1, t])) });
+  // semi1 A v D: A wins every heat; semi2 B v C: B wins; third D v C: tied 18-18 each heat
+  const results = {
+    semi1: { 1: heat("A", "D", [1, 2, 3, 4], [5, 6, 7, 8]), 2: heat("A", "D", [1, 2, 3, 4], [5, 6, 7, 8]), 3: heat("A", "D", [1, 2, 3, 4], [5, 6, 7, 8]) },
+    semi2: { 1: heat("B", "C", [1, 2, 3, 4], [5, 6, 7, 8]), 2: heat("B", "C", [1, 2, 3, 4], [5, 6, 7, 8]), 3: heat("B", "C", [1, 2, 3, 4], [5, 6, 7, 8]) },
+    third: { 1: heat("D", "C", [1, 4, 5, 8], [2, 3, 6, 7]), 2: heat("D", "C", [1, 4, 5, 8], [2, 3, 6, 7]), 3: heat("D", "C", [1, 4, 5, 8], [2, 3, 6, 7]) },
+  };
+  const open = computeBonus(ranked, lineups, results);
+  const t = open.matches.find((m) => m.id === "third");
+  assert.equal(t.tied, true);
+  assert.equal(t.winner, null);
+  assert.equal(open.places.length, 0, "no final yet, and the tie isn't decided");
+  const decided = computeBonus(ranked, lineups, results, undefined, true, { third: { winner: "D", note: "league decision" } }).matches.find((m) => m.id === "third");
+  assert.deepEqual([decided.winner, decided.loser, decided.decision], ["D", "C", "league decision"]);
+});
+
 test("export: one JSON file with teams, draft, season table and Week 1 races", async () => {
   const { readFileSync } = await import("node:fs");
   const w = JSON.parse(readFileSync(new URL("./fixtures/week1-races.json", import.meta.url), "utf8"));

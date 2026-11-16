@@ -318,7 +318,7 @@
     if (!a || !c) return `<div class="bonus-match"><h3>${esc(m.label)}</h3><p class="sub">${m.id === "final" ? "Semifinal winners" : "Semifinal losers"} fly here once both semifinals are done.</p></div>`;
     const seedOf = (sp) => b.seeds.indexOf(sp) + 1;
     const score = m.totals ? `${m.totals[a]}–${m.totals[c]}` : "";
-    const head = `<h3>${esc(m.label)} <span class="vs">#${seedOf(a)} ${esc(tname(a))} v #${seedOf(c)} ${esc(tname(c))}</span>${m.heats.some((h) => h.run) ? `<span class="score" data-bscore="${m.id}">${score}${m.winner ? ` · ${esc(tname(m.winner))} wins` : m.tied ? " · tied" : ""}</span>` : ""}</h3>`;
+    const head = `<h3>${esc(m.label)} <span class="vs">#${seedOf(a)} ${esc(tname(a))} v #${seedOf(c)} ${esc(tname(c))}</span>${m.heats.some((h) => h.run) ? `<span class="score" data-bscore="${m.id}">${score}${m.winner ? ` · ${esc(tname(m.winner))} wins${m.decision ? ` (${esc(m.decision)})` : ""}` : m.tied ? " · tied" : ""}</span>` : ""}</h3>`;
     const rows = [a, c].map((sp) => {
       const pilots = [1, 2, 3, 4].map((tier) => {
         const cells = m.heats.map((h) => h.entries.find((e) => e.sponsor === sp && e.tier === tier));
@@ -999,7 +999,7 @@
           }
           for (const sp of m.teams) { const c = bx.querySelector(`[data-btot="${CSS.escape(`${m.id}|${sp}`)}"]`); if (c && m.totals) c.textContent = m.heats.some((h) => h.run) ? m.totals[sp] : "–"; }
           const sc = bx.querySelector(`[data-bscore="${m.id}"]`);
-          if (sc && m.totals) sc.textContent = `${m.totals[m.teams[0]]}–${m.totals[m.teams[1]]}${m.winner ? ` · ${tname(m.winner)} wins` : m.tied ? " · tied" : ""}`;
+          if (sc && m.totals) sc.textContent = `${m.totals[m.teams[0]]}–${m.totals[m.teams[1]]}${m.winner ? ` · ${tname(m.winner)} wins${m.decision ? ` (${m.decision})` : ""}` : m.tied ? " · tied" : ""}`;
         }
         const pl = bx.querySelector(".bonus-places");
         const fresh = bonusPlaces(d.bonus);

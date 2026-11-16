@@ -107,6 +107,12 @@ export const TEAMS = [
   { sponsor: "RadioMaster", captain: "BenDaOctopus", pilots: ["asiy", "ZAR", "ZEBRA_THREE", "Lord_Lanny"] },
 ];
 
+// League decisions for tied bonus matches (equal heat points after 3 heats), by track and
+// match id (semi1, semi2, final, third): the sponsor the league gave the match to.
+export const BONUS_DECISIONS = {
+  2: { third: { winner: "NewBeeDrone", note: "tied 54–54, league decision" } },
+};
+
 // League-set times that replace what Velocidrone lists, by track and roster name.
 // `since`: the override applies to saves from then on (stats history included).
 export const TIME_OVERRIDES = {
