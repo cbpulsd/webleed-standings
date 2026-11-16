@@ -48,7 +48,15 @@ export const TRACKS = [
     quad: { name: "Cetus PRO", ids: [] },
     raceDay: "2026-11-15",
   },
-  { id: 3, name: "Track 3" },
+  {
+    id: 3,
+    name: "Track 3",
+    leaderboardUrl: "https://www.velocidrone.com/leaderboard/33/2220/All",
+    opensAt: "2026-11-15T05:00:00Z", // right after Track 2 locks
+    locksAt: "2026-11-22T04:59:00Z", // Sat Nov 21, 11:59 PM Eastern
+    quad: { name: "Tiny Hawk", ids: [] },
+    raceDay: "2026-11-22",
+  },
   { id: 4, name: "Track 4" },
   { id: 5, name: "Track 5" },
   { id: 6, name: "Track 6" },
