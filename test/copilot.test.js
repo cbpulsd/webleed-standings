@@ -259,6 +259,17 @@ test("auto-import is on by default; the director can turn it off and check now; 
   assert.equal(out.import.phase, "racing");
 });
 
+test("Check now before race day only reports: Copilot reachable, nothing flagged on the Races page", async () => {
+  const { env, track, store } = await setup(2, { locked: false });
+  const fake = fakeCopilot("WB-S5-R2", { step: -1, selected: "WB-S5-R2" });
+  const r = await copilotTick(env, track, Date.parse("2026-11-12T20:00:00Z"), { store, fetchImpl: fake.fetchImpl, force: true });
+  assert.equal(r.state.phase, "scheduled");
+  assert.equal(r.again, false);
+  assert.ok(fake.calls.length >= 2, "it does contact Copilot");
+  assert.deepEqual(r.state.flags.map((f) => [f.level, f.code]), [["info", "reachable"]]);
+  assert.equal(Object.keys((await store.docs()).lineup.sitting || {}).length, 0, "nothing imported before race day");
+});
+
 test("sit-outs and tiers read from Copilot's raw feed", () => {
   const raw = { pilots: fx["WB-S5-R1"].pilots.map(([n, t, times]) => ({ pilot_name: n, weed_tier: t, ...Object.fromEntries(times.split(",").map((v, i) => [`heat${i + 1}_time`, v])) })) };
   const read = readRaw(raw, TEAMS);

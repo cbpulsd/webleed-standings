@@ -297,15 +297,6 @@ export async function copilotTick(env, track, now, { store, fetchImpl = fetch, f
     return save(false, { phase: "expired" });
   }
 
-  // Our side: the locked Smash standings set the tiers.
-  const record = await getRecord(env, track.id);
-  const teams = record?.teams || teamsFor(track);
-  if (record?.status !== "locked") {
-    flag("error", "not-locked", `${track.name} isn't locked yet, so tiers aren't set. Nothing imported.`);
-    return save(true, { phase: "blocked" });
-  }
-  const standings = applyOverrides(record.standings, overridesFor(track));
-
   // Their side.
   let selected, raw;
   try {
@@ -321,6 +312,24 @@ export async function copilotTick(env, track, now, { store, fetchImpl = fetch, f
   state.failures = 0;
   delete state.failingSince;
   state.selected = selected?.selected_event ?? null;
+
+  // Our side: the locked Smash standings set the tiers.
+  const record = await getRecord(env, track.id);
+  const teams = record?.teams || teamsFor(track);
+  const early = now < start; // a "Check now" before race day: report, don't import
+  if (record?.status !== "locked") {
+    if (early) {
+      flag("info", "reachable", `Copilot is reachable (selected event ${state.selected || "none"}; ${raw ? `${state.event} exists` : `no ${state.event} yet`}). Tiers are set when ${track.name} locks, and importing starts on race day.`);
+      return save(false, { phase: "scheduled" });
+    }
+    flag("error", "not-locked", `${track.name} isn't locked yet, so tiers aren't set. Nothing imported.`);
+    return save(true, { phase: "blocked" });
+  }
+  const standings = applyOverrides(record.standings, overridesFor(track));
+  if (early) {
+    flag("info", "reachable", `Copilot is reachable (selected event ${state.selected || "none"}; ${raw ? `${state.event} exists` : `no ${state.event} yet`}). Importing starts on race day.`);
+    return save(false, { phase: "scheduled" });
+  }
 
   const read = readRaw(raw, teams);
   const docs = await store.docs();
