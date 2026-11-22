@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { TEAMS, TRACKS } from "../src/config.js";
-import { copilotTick, readRaw, sittingFrom, tieWinner, planWrites } from "../src/copilot.js";
+import { copilotTick, pickEvent, readRaw, sittingFrom, tieWinner, planWrites } from "../src/copilot.js";
 import { computeRaces } from "../src/races.js";
 import { raceStore } from "../src/racestore.js";
 import { copilotSchedule, route } from "../src/index.js";
@@ -282,4 +282,34 @@ test("sit-outs and tiers read from Copilot's raw feed", () => {
   assert.equal(read.unknown.length, 0, "every Copilot name maps to a roster pilot (Wheelman1, TheSkittles, _ZAR_, Lounds...)");
   assert.deepEqual(sittingFrom(read, TEAMS), week1.sitting);
   assert.deepEqual(planWrites({ a: 1, b: 2 }, { a: 1, b: 3 }, { b: 9 }).kept.map((k) => k.key), ["b"]);
+});
+
+// Copilot named Week 3 "WB-S5-T3" (Weeks 1-2 were R1, R2), so both names are looked for.
+test("finds the week's event under either name, R or T", async () => {
+  // R2 exists but is empty; T2 holds the race and is selected.
+  const asT = (opts = {}) => {
+    const fake = fakeCopilot("WB-S5-R2", { selected: "WB-S5-T2", ...opts });
+    const fetchImpl = async (url) => {
+      const path = new URL(url).pathname;
+      if (path === "/api/public/event/WB-S5-R2") return new Response(JSON.stringify({ event_name: "WB-S5-R2", pilots: [], count: 0 }), { status: 200 });
+      return fake.fetchImpl(url);
+    };
+    return fetchImpl;
+  };
+  let { env, track, store } = await setup(2);
+  let r = await copilotTick(env, track, NOW2, { store, fetchImpl: asT({ step: -1 }) });
+  assert.equal(r.state.event, "WB-S5-T2");
+  assert.ok(!r.state.flags.some((f) => f.code === "selected"), JSON.stringify(r.state.flags));
+  r = await copilotTick(env, track, NOW2 + 60 * 60_000, { store, fetchImpl: asT() });
+  assert.equal(r.state.event, "WB-S5-T2");
+  assert.equal(r.state.phase, "verified", JSON.stringify(r.state.flags));
+
+  // Times win over the selection: racing into T while something else is selected still imports from T.
+  const names = ["WB-S5-R3", "WB-S5-T3"];
+  const raced = { pilots: [{ pilot_name: "x", heat1_time: "80.1" }] };
+  const empty = { pilots: [] };
+  assert.equal(pickEvent(names, [empty, raced], "wb-test-wDougie").event, "WB-S5-T3");
+  assert.equal(pickEvent(names, [empty, { pilots: [{ pilot_name: "x" }] }], "WB-S5-T3").event, "WB-S5-T3", "selected, no times yet");
+  assert.equal(pickEvent(names, [empty, { pilots: [{ pilot_name: "x" }] }], "other").event, "WB-S5-T3", "the one with pilots");
+  assert.equal(pickEvent(names, [null, null], null).event, "WB-S5-R3", "neither exists yet");
 });

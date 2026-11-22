@@ -27,7 +27,20 @@ const SEMI_HEATS = [9, 10, 11];
 const LAST_HEATS = [12, 13, 14];
 const MAX_HEAT = 14;
 
-export const copilotEvent = (track) => track.copilot?.event || COPILOT.event(track);
+export const copilotEvents = (track) => (track.copilot?.event ? [track.copilot.event] : COPILOT.events(track));
+export const copilotEvent = (track) => copilotEvents(track)[0];
+const heatTimesIn = (raw) => (raw?.pilots || []).some((p) => Object.keys(p).some((k) => /^heat\d+_time$/.test(k) && p[k]));
+// Which of the possible event names to read: the one with race times in it, else the one
+// Copilot has selected, else one with pilots in it, else the first name.
+export function pickEvent(names, raws, selected) {
+  const sel = String(selected || "").toLowerCase();
+  const i = [
+    raws.findIndex(heatTimesIn),
+    names.findIndex((n) => n.toLowerCase() === sel),
+    raws.findIndex((r) => (r?.pilots || []).length > 0),
+  ].find((x) => x >= 0) ?? 0;
+  return { event: names[i], raw: raws[i] };
+}
 // Races are on Sundays in November/December: Eastern Standard Time (UTC-5).
 // Checking starts at COPILOT.startEastern on race day (half an hour before the 5 PM start).
 export const raceStart = (track) => {
@@ -281,7 +294,8 @@ export function publicImport(state) {
 // Returns { state, again } where `again` says whether to check again in a minute.
 export async function copilotTick(env, track, now, { store, fetchImpl = fetch, force = false } = {}) {
   const prev = (await store.getImport()) || {};
-  const state = { enabled: true, cells: {}, decisions: {}, failures: 0, ...prev, event: copilotEvent(track) };
+  const names = copilotEvents(track);
+  const state = { enabled: true, cells: {}, decisions: {}, failures: 0, ...prev, event: prev.event && names.includes(prev.event) ? prev.event : names[0] };
   const flags = [];
   const flag = (level, code, message) => flags.push({ level, code, message });
   const save = async (again, extra = {}) => {
@@ -304,7 +318,9 @@ export async function copilotTick(env, track, now, { store, fetchImpl = fetch, f
   // Their side.
   let selected, raw;
   try {
-    [selected, raw] = await Promise.all([getJson(fetchImpl, "/api/settings/selected-event"), getJson(fetchImpl, `/api/public/event/${encodeURIComponent(state.event)}`)]);
+    let raws;
+    [selected, ...raws] = await Promise.all([getJson(fetchImpl, "/api/settings/selected-event"), ...names.map((n) => getJson(fetchImpl, `/api/public/event/${encodeURIComponent(n)}`))]);
+    ({ event: state.event, raw } = pickEvent(names, raws, selected?.selected_event));
   } catch (err) {
     state.failures = (prev.failures || 0) + 1;
     state.failingSince ||= new Date(now).toISOString();

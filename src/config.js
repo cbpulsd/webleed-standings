@@ -120,7 +120,9 @@ export const TEAMS = [
 // match is in and the end-of-day check against Copilot's own results passes.
 export const COPILOT = {
   base: "http://www.avgjj.com:59000",
-  event: (track) => `WB-S5-R${track.id}`,
+  // Copilot's name for the week's event: R1, R2 in Weeks 1-2, T3 in Week 3, so both are looked for.
+  // A track can name its event outright with copilot: { event: "..." }.
+  events: (track) => [`WB-S5-R${track.id}`, `WB-S5-T${track.id}`],
   pollSeconds: 60,
   startEastern: "16:30", // races start at 5 PM Eastern; checking begins half an hour before
   windowHours: 72, // from the start above; races have no fixed end time
