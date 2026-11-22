@@ -6,8 +6,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const [esbuild, out, statsFixture] = process.argv.slice(2);
+const [esbuild, out, statsFixture, extraScript] = process.argv.slice(2);
 const stats = statsFixture ? readFileSync(statsFixture, "utf8") : "null";
+// Optional extra script: can add scenarios with render(el) that draw their own view instead of the page.
+const extra = extraScript ? readFileSync(extraScript, "utf8") : "";
 
 const shim = execFileSync(esbuild, [join(root, "test/preview-shim.js"), "--bundle", "--format=iife", "--platform=browser", "--target=es2020"], { encoding: "utf8" });
 const css = readFileSync(join(root, "public/styles.css"), "utf8");
@@ -44,6 +46,7 @@ ${css}
 
 <script>window.STATS_FIXTURE = ${stats};</script>
 <script>${shim}</script>
+${extra ? `<script>${extra}</script>` : ""}
 <script>
 (() => {
   const MARKUP = ${JSON.stringify(markup)};
@@ -58,6 +61,12 @@ ${css}
   async function boot(name) {
     current = name; paintBar();
     if (window.__standingsStop) window.__standingsStop();
+    const own = P.scenarios[name];
+    if (own.render) {
+      own.render(document.getElementById("app"));
+      document.getElementById("scenarioNote").textContent = own.note || "";
+      return;
+    }
     await P.setup(name);
     document.getElementById("app").innerHTML = MARKUP;
     try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
@@ -69,7 +78,8 @@ ${css}
     if (sc.view === "racestats") setTimeout(() => document.getElementById("viewRaceStatsBtn")?.click(), 300);
   }
   bar.addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) boot(b.dataset.k); });
-  boot(${statsFixture ? '"week1"' : '"live"'});
+  const first = Object.keys(P.scenarios).find((k) => P.scenarios[k].start);
+  boot(first || ${statsFixture ? '"week1"' : '"live"'});
 })();
 </script>
 `;
