@@ -206,7 +206,7 @@
   const SHOW_MANY = 20; // Spotlight leaderboards show the top 20, then everyone
   const BAT_MAX = 50; // Battles & Records lists open to at most 50 rows
   const PV_TABS = { spotlight: "Spotlight", race: "Race stats", smash: "Smash stats" };
-  const MIN_WEEKS = 2; // season rate stats (per week, %, averages) need this many raced weeks to rank
+  const MIN_WEEKS = 1; // raced weeks a pilot needs to be ranked on season rates and averages
 
   function readPilotsHash() {
     const h = location.hash;
@@ -371,7 +371,7 @@
   function pvNote(kind, d) {
     const raced = d.weeks.filter((w) => w.races).length;
     if (kind === "race") return pv.scope === "season"
-      ? `Race heats from ${raced} race day${raced === 1 ? "" : "s"}; sit-out weeks don't count. Points are tier points (10 for 1st down to 1). Rates and averages rank pilots with at least ${MIN_WEEKS} raced weeks. Bonus points are bonus-round heat points (8 down to 1). Click a column to sort.`
+      ? `Race heats from ${raced} race day${raced === 1 ? "" : "s"}; sit-out weeks don't count. Points are tier points (10 for 1st down to 1). Wks shows how many weeks each pilot has raced. Bonus points are bonus-round heat points (8 down to 1). Click a column to sort.`
       : `Tier heats from ${esc(scopeName(d))}. Pilots who sat out aren't listed. Click a column to sort.`;
     return pv.scope === "season"
       ? `LB # is a pilot's place among the league's 50 pilots on each week's locked leaderboard. Draft and tryout spots are among the same 50 pilots. New PBs count each new personal best the site saw before the lock.`
@@ -410,7 +410,7 @@
       const place = (r) => 1 + all.filter((x) => (x[stat.key] - r[stat.key]) * (stat.low ? 1 : -1) < 0).length;
       const shown = pv.statAll ? all : all.slice(0, SHOW_MANY);
       statHtml = `
-        <div class="lbx-head"><h3>${esc(stat.label)}</h3><p>${esc(stat.about)}${season && stat.rows === race ? ` Pilots need ${MIN_WEEKS} raced weeks to rank.` : ""} Level pilots share a place.</p></div>
+        <div class="lbx-head"><h3>${esc(stat.label)}</h3><p>${esc(stat.about)} Level pilots share a place.</p></div>
         <div class="table-wrap pv-wrap flat"><table class="pv-table lbt">
           <caption class="sr">${esc(stat.label)} leaderboard, ${esc(scopeName(d))}</caption>
           <thead><tr><th class="num rk" scope="col">#</th><th scope="col">Pilot</th><th scope="col" class="tm">Team</th><th class="num" scope="col">${esc(stat.label)}</th><th scope="col" class="dt"></th></tr></thead>
