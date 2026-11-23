@@ -265,17 +265,21 @@
   }
 
   // Columns: [key, label, format, lower-is-better, title]
+  // Columns: [key, label, format, lower-is-better, tooltip]
   function columns(kind) {
     const wk = pv.scope !== "season";
+    const dec = (d) => (v) => n2(v, d);
+    const time = (v) => (v == null ? "–" : fmt(v));
+    const off = (v) => (v == null ? "–" : `+${(+v).toFixed(2)}%`);
     if (pv.mode === "teams") return kind === "race"
-      ? [["pts", "Pts", num, false], ["wins", "Heat wins", num, false], ["fin", "Avg finish", (v) => n2(v), true, "Average heat finishing place of the team's racers"], ["bhr", "Best heat #", (v) => n2(v, 1), true, "Average of the team's racers' best-heat rank among all 40 racers"], ["spread", "Spread %", (v) => n2(v), true, "Average consistency of the team's racers: spread of heat times as a % of their average"], ["bonus", "Bonus pts", num, false]]
-      : [["avg", "Avg LB #", (v) => n2(v, 1), true], ["best", "Best LB #", num, true], ["total", wk ? "Team total" : "Season total", (v) => (v == null ? "–" : fmt(v)), true], ["pbs", "New PBs", num, false], ["vsDraft", "vs draft", (v) => signed(v), false, "Average places above (▲) or below (▼) where the team's pilots were drafted"]];
+      ? [["pts", "Pts", num, false, "Tier points from all the team's racers"], ["wins", "Heat wins", num, false, "Tier heats won by the team's racers"], ["fin", "Avg finish", dec(2), true, "Average heat finishing place of the team's racers"], ["bhr", "Best heat #", dec(1), true, "Average rank of each racer's fastest heat vs all 40 racers"], ["spread", "Spread %", dec(2), true, "Average spread of heat times, % of average (lower = steadier)"], ["bonus", "Bonus pts", num, false, "Bonus-round heat points"]]
+      : [["avg", "Avg LB #", dec(1), true, "Average league leaderboard place of the team's pilots"], ["best", "Best LB #", num, true, "Best league leaderboard place by any of the team's pilots"], ["total", wk ? "Team total" : "Season total", time, true, wk ? "All five locked times added up" : "All the team's locked times added up"], ["pbs", "New PBs", num, false, "New personal bests before the lock"], ["vsDraft", "vs draft", (v) => signed(v), false, "Average places above (▲) or below (▼) draft spot"]];
     if (kind === "race") return wk
-      ? [["tier", "Tier", num, true], ["pts", "Pts", num, false], ["place", "Tier place", (v) => (v ? ordinal(v) : "–"), true], ["wins", "Wins", num, false], ["podPct", "Top 3", pct, false, "Share of heats finished in the top 3"], ["fin", "Avg finish", (v) => n2(v), true], ["bhr", "Best heat #", num, true, "Their fastest heat, ranked against all 40 racers that day"], ["spread", "Spread %", (v) => n2(v), true, "Spread of their 8 heat times as a % of their average (lower = more consistent)"], ["bonus", "Bonus pts", num, false]]
-      : [["weeks", "Wks", num, false, "Weeks raced"], ["pts", "Pts", num, false], ["ppw", "Pts/wk", (v) => n2(v, 1), false], ["wins", "Wins", num, false], ["winPct", "Win %", pct, false], ["podPct", "Top 3", pct, false, "Share of heats finished in the top 3"], ["fin", "Avg finish", (v) => n2(v), true], ["bhr", "Best heat #", (v) => n2(v, 1), true, "Average weekly rank of their fastest heat against all 40 racers"], ["spread", "Spread %", (v) => n2(v), true, "Average weekly spread of heat times as a % of their average (lower = more consistent)"], ["bonus", "Bonus pts", num, false]];
+      ? [["tier", "Tier", num, true, "Tier raced this week"], ["pts", "Pts", num, false, "Tier points (10 for a heat win down to 1)"], ["place", "Tier place", (v) => (v ? ordinal(v) : "–"), true, "Finish in their tier for the day"], ["wins", "Wins", num, false, "Tier heats won"], ["podPct", "Top 3", pct, false, "Share of heats finished in the top 3"], ["fin", "Avg finish", dec(2), true, "Average heat finishing place"], ["bhr", "Best heat #", num, true, "Fastest heat, ranked vs all 40 racers"], ["spread", "Spread %", dec(2), true, "Spread of heat times, % of average (lower = steadier)"], ["bonus", "Bonus pts", num, false, "Bonus-round heat points"]]
+      : [["weeks", "Wks", num, false, "Weeks raced"], ["pts", "Pts", num, false, "Tier points, all weeks"], ["ppw", "Pts/wk", dec(1), false, "Tier points per raced week"], ["wins", "Wins", num, false, "Tier heats won"], ["winPct", "Win %", pct, false, "Share of heats won"], ["podPct", "Top 3", pct, false, "Share of heats finished in the top 3"], ["fin", "Avg finish", dec(2), true, "Average heat finishing place"], ["bhr", "Best heat #", dec(1), true, "Average weekly rank of their fastest heat vs all 40 racers"], ["spread", "Spread %", dec(2), true, "Average spread of heat times, % of average (lower = steadier)"], ["bonus", "Bonus pts", num, false, "Bonus-round heat points"]];
     return wk
-      ? [["time", "Time", (v) => (v == null ? "–" : fmt(v)), true], ["rank", "LB #", num, true, "Place among the league's 50 pilots"], ["off", "% off", (v) => (v == null ? "–" : `+${(+v).toFixed(2)}%`), true, "How far behind the week's fastest league time"], ["pbs", "New PBs", num, false], ["vsDraft", "vs draft", (v) => signed(v, 0), false, "Places above (▲) or below (▼) where they were drafted"], ["vsTryout", "vs tryout", (v) => signed(v, 0), false, "Places above (▲) or below (▼) their tryout spot"]]
-      : [["avg", "Avg LB #", (v) => n2(v, 1), true, "Average place among the league's 50 pilots"], ["best", "Best LB #", num, true], ["off", "Avg % off", (v) => (v == null ? "–" : `+${(+v).toFixed(2)}%`), true, "Average gap to each week's fastest league time"], ["total", "Season total", (v) => (v == null ? "–" : fmt(v)), true, "All their locked leaderboard times added up"], ["pbs", "New PBs", num, false], ["top10", "Top 10s", num, false, "Weeks in the league's top 10"], ["vsDraft", "vs draft", (v) => signed(v), false, "Average places above (▲) or below (▼) where they were drafted"], ["vsTryout", "vs tryout", (v) => signed(v), false, "Average places above (▲) or below (▼) their tryout spot"]];
+      ? [["time", "Time", time, true, "Locked leaderboard time"], ["rank", "LB #", num, true, "Place among the league's 50 pilots"], ["off", "% off", off, true, "Gap to the week's fastest league time"], ["pbs", "New PBs", num, false, "New personal bests before the lock"], ["vsDraft", "vs draft", (v) => signed(v, 0), false, "Places above (▲) or below (▼) draft spot"], ["vsTryout", "vs tryout", (v) => signed(v, 0), false, "Places above (▲) or below (▼) tryout spot"]]
+      : [["avg", "Avg LB #", dec(1), true, "Average place among the league's 50 pilots"], ["best", "Best LB #", num, true, "Best weekly league place"], ["off", "Avg % off", off, true, "Average gap to each week's fastest league time"], ["total", "Season total", time, true, "All locked leaderboard times added up"], ["pbs", "New PBs", num, false, "New personal bests before each lock"], ["top10", "Top 10s", num, false, "Weeks in the league's top 10"], ["vsDraft", "vs draft", (v) => signed(v), false, "Average places above (▲) or below (▼) draft spot"], ["vsTryout", "vs tryout", (v) => signed(v), false, "Average places above (▲) or below (▼) tryout spot"]];
   }
 
   function sortRows(rows, cols, kind) {
@@ -352,7 +356,7 @@
     body.innerHTML = `
       <div class="table-wrap pv-wrap"><table class="pv-table">
         <caption class="sr">${esc(PV_TABS[kind])}, ${esc(scopeName(d))}, sortable</caption>
-        <thead><tr><th class="num rk" scope="col">#</th><th class="who" scope="col">${pv.mode === "teams" ? "Team" : "Pilot"}</th>
+        <thead><tr><th class="num rk" scope="col" title="Place in the current sort">#</th><th class="who" scope="col" title="${pv.mode === "teams" ? "Team, with how many of its pilots are counted" : "Pilot and team; click a name for their page"}">${pv.mode === "teams" ? "Team" : "Pilot"}</th>
           ${cols.map(([k, l, , low, title]) => `<th class="num" scope="col" aria-sort="${s.key === k ? (s.dir === 1 ? "ascending" : "descending") : "none"}"><button type="button" data-sort="${k}" data-low="${low ? 1 : 0}"${title ? ` title="${esc(title)}"` : ""}>${l}${s.key === k ? `<i aria-hidden="true">${s.dir === 1 ? "↑" : "↓"}</i>` : ""}</button></th>`).join("")}</tr></thead>
         <tbody>${shown.map((r, i) => `<tr class="${r.ok ? "" : "unq"}${i === firstOut ? " unq-first" : ""}">
           <td class="num rk">${r.ok ? rows.indexOf(r) + 1 : "–"}</td>
@@ -447,6 +451,13 @@
       { id: "draft", label: "Most improved", rows: smash, key: "vsDraft", f: (v) => signed(v, season ? 1 : 0), detail: (r) => `drafted #${r.p.draftPos ?? "–"}`, about: "Places above (▲) or below (▼) where they were drafted, by league leaderboard place." },
     ].filter(Boolean);
     const stat = stats.find((x) => x.id === pv.stat) || stats[0];
+    const STAT_TIPS = {
+      ppw: season ? "Tier points per raced week" : "Tier points for the day", wins: "Tier heats won", fin: "Average heat finishing place",
+      bhr: season ? "Average rank of their fastest heat vs all 40 racers" : "Fastest heat, ranked vs all 40 racers", spread: "Spread of heat times, % of average (lower = steadier)",
+      streak: "Most heats won in a row", bonus: "Bonus-round heat points", lb: season ? "Average place among the league's 50 pilots" : "Place among the league's 50 pilots",
+      total: "All locked leaderboard times added up", pbs: "New personal bests before the lock", draft: "Places above (▲) or below (▼) draft spot",
+    };
+    if (stat) stat.tip = STAT_TIPS[stat.id];
 
     let statHtml = "";
     if (stat) {
@@ -457,7 +468,7 @@
         <div class="lbx-head"><h3>${esc(stat.label)}</h3><p>${esc(stat.about)} Level pilots share a place.</p></div>
         <div class="table-wrap pv-wrap flat"><table class="pv-table lbt">
           <caption class="sr">${esc(stat.label)} leaderboard, ${esc(scopeName(d))}</caption>
-          <thead><tr><th class="num rk" scope="col">#</th><th scope="col">Pilot</th><th scope="col" class="tm">Team</th><th class="num" scope="col">${esc(stat.label)}</th><th scope="col" class="dt"></th></tr></thead>
+          <thead><tr><th class="num rk" scope="col" title="Place; level pilots share a place">#</th><th scope="col" title="Click a name for their page">Pilot</th><th scope="col" class="tm" title="Team name">Team</th><th class="num" scope="col" title="${esc(stat.tip || stat.about)}">${esc(stat.label)}</th><th scope="col" class="dt" title="More about this pilot's number">Detail</th></tr></thead>
           <tbody>${shown.map((r) => { const n = place(r); return `<tr class="${n <= 3 ? "top" : ""}"><td class="num rk"><span class="medal${n === 1 ? " m1" : ""}">${n}</span></td><th scope="row" class="who">${pilotLink(r.p.name, r.p.team, `<small class="tm-sm">${esc(tname(r.p.team))}</small>`)}</th><td class="tm">${esc(tname(r.p.team))}${r.p.captain ? ' <span class="muted">· Capt</span>' : ""}</td><td class="num val">${stat.f(r[stat.key], r)}<small class="dt-sm">${esc(stat.detail(r))}</small></td><td class="dt">${esc(stat.detail(r))}</td></tr>`; }).join("") || `<tr><td colspan="5" class="none">Nothing to show yet.</td></tr>`}</tbody>
         </table></div>
         ${all.length > SHOW_MANY ? `<button type="button" class="more" data-all="stat" aria-expanded="${pv.statAll}">${pv.statAll ? `Show top ${SHOW_MANY}` : `Show all ${all.length}`}</button>` : ""}`;
@@ -555,7 +566,7 @@
       if (!sm?.log?.length) return "";
       const rows = [...sm.log].reverse().map((e) => `<tr><td>${esc(dayShort.format(new Date(e.at)))}</td><td class="num">${fmt(e.time)}</td><td class="num">${e.prev != null ? `<span class="up">−${(e.prev - e.time).toFixed(3)}</span>` : `<span class="muted">first time</span>`}</td></tr>`).join("");
       return `<details class="fold pblog"><summary><h3>${esc(w.name)} <span>${sm.pbs} new PB${sm.pbs === 1 ? "" : "s"} · final ${sm.time != null ? fmt(sm.time) : "–"}${sm.rank ? ` · LB #${sm.rank}` : ""}</span></h3></summary>
-        <div class="table-wrap"><table class="stbl"><thead><tr><th>When (your time)</th><th class="num">Time</th><th class="num">Gain</th></tr></thead><tbody>${rows}</tbody></table></div></details>`;
+        <div class="table-wrap"><table class="stbl"><thead><tr><th title="When the site saw it, in your time zone">When (your time)</th><th class="num" title="New personal best time">Time</th><th class="num" title="How much faster than their previous best">Gain</th></tr></thead><tbody>${rows}</tbody></table></div></details>`;
     }).join("");
 
     el.innerHTML = `
@@ -581,7 +592,7 @@
       </div>
       <section class="chart-card"><div class="sec-head"><h2>Week by week</h2><span>leaderboard · races</span></div>
         <div class="table-wrap pv-wrap flat"><table class="pv-table wbw">
-          <thead><tr><th scope="col">Week</th><th class="num" scope="col">Time</th><th class="num" scope="col">LB #</th><th class="num" scope="col">% off</th><th class="num" scope="col">PBs</th><th class="num" scope="col">Tier</th><th class="num" scope="col">Pts</th><th class="num" scope="col">Place</th><th class="num" scope="col">Wins</th><th class="num" scope="col" title="Their fastest heat, ranked against all 40 racers">Best heat #</th><th class="num" scope="col">Spread</th><th class="num" scope="col">Bonus</th></tr></thead>
+          <thead><tr><th scope="col" title="Week and quad">Week</th><th class="num" scope="col" title="Locked leaderboard time">Time</th><th class="num" scope="col" title="Place among the league's 50 pilots">LB #</th><th class="num" scope="col" title="Gap to the week's fastest league time">% off</th><th class="num" scope="col" title="New personal bests before the lock">PBs</th><th class="num" scope="col" title="Tier raced">Tier</th><th class="num" scope="col" title="Tier points (10 for a heat win down to 1)">Pts</th><th class="num" scope="col" title="Finish in their tier for the day">Place</th><th class="num" scope="col" title="Tier heats won">Wins</th><th class="num" scope="col" title="Fastest heat, ranked vs all 40 racers">Best heat #</th><th class="num" scope="col" title="Spread of heat times, % of average (lower = steadier)">Spread</th><th class="num" scope="col" title="Bonus-round heat points">Bonus</th></tr></thead>
           <tbody>${rows}</tbody></table></div>
         <p class="sub">LB # is their place among the league's 50 pilots; % off is the gap to that week's fastest league time. Place is their finish in their tier for the day.</p>
       </section>
