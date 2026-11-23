@@ -324,6 +324,7 @@
     const body = $("pvBody");
     if (pv.tab === "spotlight") {
       body.innerHTML = spotlight(d);
+      wireDepthTips(body);
       body.onclick = (e) => {
         const b = e.target.closest("[data-stat],[data-bat],[data-all]");
         if (!b) return;
@@ -379,6 +380,47 @@
   }
 
   // ---- Spotlight: top three for the headline stats, then the closest battles and records ----
+  // Closest full heats: one strip per heat, each pilot a dot placed by seconds behind the
+  // winner, on a scale shared by every heat in the list (so tighter heats look tighter).
+  function depthRows(list, wname) {
+    if (!list.length) return "";
+    const max = Math.max(...list.map((h) => h.gap));
+    const step = [0.5, 1, 2, 3, 4, 5, 10].find((k) => max / k <= 5) || 20;
+    const top = Math.ceil(max / step) * step || 1;
+    const X = (g) => `${((g / top) * 100).toFixed(2)}%`;
+    const ticks = []; for (let v = 0; v <= top + 1e-9; v += step) ticks.push(v);
+    const axis = `<li class="dh-axis" aria-hidden="true"><span></span><div class="dh-main"><span class="dh-ax-l">behind the winner</span><div class="dh-track">${ticks.map((v) => `<i style="left:${X(v)}">${v ? "+" + (+v.toFixed(1)) : "0"}s</i>`).join("")}</div></div><span></span></li>`;
+    return axis + list.map((h) => {
+      const t0 = h.field[0][2];
+      const dots = h.field.map((x, i) => [...x, i]).reverse().map(([pilot, team, time, i]) => `<button type="button" class="dh-dot${i === 0 ? " w" : ""}" style="left:${X(time - t0)}" data-tip="${esc(pilot)}|${esc(tname(team))}|${i + 1}|${i ? "+" + (time - t0).toFixed(3) + "s" : fmt(time)}" aria-label="${ordinal(i + 1)}: ${esc(pilot)}, ${i ? "+" + (time - t0).toFixed(3) + " seconds" : fmt(time)}"></button>`).join("");
+      return `<li class="dh"><span class="medal">${h.n}</span>
+        <div class="dh-main"><div class="bl"><span class="dh-l">${esc(h.label)}</span><small>${esc(wname(h.week))} · ${esc(h.a.pilot)} won, ${esc(h.b.pilot)} 10th</small></div>
+          <div class="dh-track" role="group" aria-label="${esc(h.label)}, ${esc(wname(h.week))}: finishers by gap to the winner"><span class="dh-rng" style="width:${X(h.gap)}"></span>${dots}</div></div>
+        ${`<b class="gap">${h.gap.toFixed(3)}<small>s</small></b>`}</li>`;
+    }).join("");
+  }
+  function wireDepthTips(root) {
+    const tip = root.querySelector("#dhTip");
+    if (!tip) return;
+    const box = tip.parentElement;
+    const show = (c) => {
+      const [pilot, team, place, val] = c.dataset.tip.split("|");
+      tip.innerHTML = `<b>${pilot}</b><div><span>Team</span><span>${team}</span></div><div><span>Place</span><span>${ordinal(+place)}</span></div><div><span>${place === "1" ? "Time" : "Behind"}</span><span>${val}</span></div>`;
+      tip.hidden = false;
+      const bx = box.getBoundingClientRect(), r = c.getBoundingClientRect();
+      const cx = r.left + r.width / 2 - bx.left, wide = tip.offsetWidth;
+      tip.style.left = `${Math.max(0, Math.min(cx + 12 + wide <= bx.width ? cx + 12 : cx - wide - 12, bx.width - wide))}px`;
+      tip.style.top = `${Math.max(0, r.bottom - bx.top + 6)}px`;
+    };
+    root.querySelectorAll(".dh-dot").forEach((c) => {
+      c.addEventListener("mouseenter", () => show(c));
+      c.addEventListener("focus", () => show(c));
+      c.addEventListener("click", () => show(c));
+      c.addEventListener("mouseleave", () => { if (document.activeElement !== c) tip.hidden = true; });
+      c.addEventListener("blur", () => { tip.hidden = true; });
+    });
+  }
+
   function spotlight(d) {
     const season = pv.scope === "season";
     const wk = season ? null : d.weeks.find((w) => w.id === pv.scope);
@@ -425,29 +467,34 @@
     const gap = (g) => `<b class="gap">${g.toFixed(3)}<small>s</small></b>`;
     const pair = (b, what, word = "over") => `<li><span class="medal">${b.n}</span><div class="bl">${pilotLink(b.a.pilot, b.a.team)} <span class="over">${word}</span> ${pilotLink(b.b.pilot, b.b.team)}<small>${esc(wname(b.week))} · ${esc(b.label || "Leaderboard")}${what ? " · " + what(b) : ""}</small></div>${gap(b.gap)}</li>`;
     // Each week is a different track: the season's fastest heats are listed week by week.
-    const fastest = season
-      ? d.weeks.filter((w) => w.races).flatMap((w) => ranked(d.records.fastest.filter((x) => x.week === w.id), (x) => x.time).map((x, i) => ({ ...x, n: i + 1 })))
-      : ranked(d.records.fastest, (x) => x.time).map((x, i) => ({ ...x, n: i + 1 }));
+    // Fastest heats: each week, each tier's quickest runs (numbered within the tier).
+    const fastest = d.weeks.filter((w) => w.races && inScope({ week: w.id })).flatMap((w) =>
+      [...new Set(d.records.fastest.filter((x) => x.week === w.id).map((x) => x.tier))].sort((a, b) => a - b).flatMap((t) =>
+        d.records.fastest.filter((x) => x.week === w.id && x.tier === t).sort((a, b) => a.time - b.time).map((x, i) => ({ ...x, n: i + 1 }))));
     const num = (list) => list.map((x, i) => ({ ...x, n: i + 1 }));
     const bats = [
       { id: "close", label: "Closest battles", about: "Smallest gaps between two pilots finishing next to each other, for any position, in tier heats and the bonus round.", items: num(ranked(d.battles.close, (x) => x.gap)), row: (b) => pair(b, (x) => `for ${ordinal(x.pos)}`) },
       { id: "cwins", label: "Closest heat wins", about: "Smallest gaps between 1st and 2nd.", items: num(ranked(d.battles.wins, (x) => x.gap)), row: (b) => pair(b, () => "for the win") },
-      { id: "cheats", label: "Closest full heats", about: "Tier heats with the smallest gap from 1st to 10th.", items: num(ranked(d.battles.heats, (x) => x.gap)), row: (h) => `<li><span class="medal">${h.n}</span><div class="bl"><span>${esc(h.label)}</span><small>${esc(wname(h.week))} · ${esc(h.a.pilot)} won, ${esc(h.b.pilot)} 10th</small></div>${gap(h.gap)}</li>` },
+      { id: "cheats", label: "Closest full heats", about: "Tier heats with the smallest gap from 1st to 10th. Each dot is a pilot, placed by how far behind the winner they finished; all heats share one scale. Hover or tap a dot for the pilot.", items: num(ranked(d.battles.heats, (x) => x.gap)), depth: true },
       { id: "csmash", label: "Closest leaderboard gaps", about: "Smallest gaps between neighbouring league places on the locked leaderboard.", items: num(ranked(d.battles.smash, (x) => x.gap)), row: (b) => pair(b, (x) => `for LB #${x.pos}`) },
       hasRace && { id: "margins", label: "Biggest win margins", about: "Biggest gaps between the heat winner and 2nd.", items: num(ranked(d.records.margins, (x) => x.gap, true)), row: (b) => pair(b, null, "ahead of") },
-      hasRace && { id: "fast", label: "Fastest heats", about: season ? "Fastest single heat times, week by week (each week is a different track)." : "Fastest single heat times of the day.", items: fastest, row: (x) => `<li><span class="medal">${x.n}</span><div class="bl">${pilotLink(x.pilot, x.team)}<small>${esc(wname(x.week))} · ${esc(x.label)}</small></div><b class="gap">${fmt(x.time)}</b></li>` },
+      hasRace && { id: "fast", label: "Fastest heats", about: "Fastest single heat runs in each tier, week by week (each week is a different track).", items: fastest, row: (x) => `<li><span class="medal">${x.n}</span><div class="bl">${pilotLink(x.pilot, x.team)}<small>${esc(wname(x.week))} · ${esc(x.label)}</small></div><b class="gap">${fmt(x.time)}</b></li>` },
     ].filter(Boolean);
     const bat = bats.find((x) => x.id === pv.bat) || bats[0];
-    const raceWeekCount = Math.max(1, d.weeks.filter((w) => w.races).length);
-    const perWeek = (n) => bat.items.filter((x) => x.n <= Math.ceil(n / raceWeekCount));
-    const byWeek = bat.id === "fast" && season;
-    const fullBat = byWeek ? bat.items.filter((x) => x.n <= Math.floor(BAT_MAX / raceWeekCount)) : bat.items.slice(0, BAT_MAX);
-    const shownBat = pv.batAll ? fullBat : byWeek ? perWeek(SHOW_MANY) : bat.items.slice(0, SHOW_MANY);
-    let lastWeek = null;
-    const batRows = shownBat.map((x) => {
-      const head = bat.id === "fast" && season && x.week !== lastWeek ? `<li class="wk">${esc(wname(x.week))}</li>` : "";
-      lastWeek = x.week;
-      return head + bat.row(x);
+    // Fastest heats show 1 run per tier per week, opening to as many per tier as fit in BAT_MAX.
+    const byTier = bat.id === "fast";
+    const groups = byTier ? new Set(bat.items.map((x) => `${x.week}|${x.tier}`)).size : 1;
+    const perGroup = Math.max(1, Math.floor(BAT_MAX / groups));
+    const fullBat = byTier ? bat.items.filter((x) => x.n <= perGroup) : bat.items.slice(0, BAT_MAX);
+    const fewBat = byTier ? bat.items.filter((x) => x.n === 1) : bat.items.slice(0, SHOW_MANY);
+    const shownBat = pv.batAll ? fullBat : fewBat;
+    let lastWeek = null, lastTier = null;
+    const batRows = bat.depth ? depthRows(shownBat, wname) : shownBat.map((x) => {
+      let head = "";
+      if (byTier && x.week !== lastWeek) { head += `<li class="wk">${esc(wname(x.week))}</li>`; lastTier = null; }
+      if (byTier && pv.batAll && x.tier !== lastTier) head += `<li class="tk">Tier ${x.tier}</li>`;
+      lastWeek = x.week; lastTier = x.tier;
+      return head + (byTier && !pv.batAll ? `<li><span class="tchip">Tier ${x.tier}</span><div class="bl">${pilotLink(x.pilot, x.team)}<small>Heat ${x.heat}</small></div><b class="gap">${fmt(x.time)}</b></li>` : bat.row(x));
     }).join("");
 
     const chips = (list, cur, attr, label) => `<div class="chips" role="group" aria-label="${label}">${list.map((x) => `<button type="button" class="chip" data-${attr}="${x.id}" aria-pressed="${x.id === cur.id}">${esc(x.label)}</button>`).join("")}</div>`;
@@ -465,8 +512,9 @@
         ${chips(bats, bat, "bat", "Battles and records")}
         <div class="chart-card lbx-card bat">
           <div class="lbx-head"><h3>${esc(bat.label)}</h3><p>${esc(bat.about)}</p></div>
-          <ol>${batRows || `<li class="none">Nothing yet</li>`}</ol>
-          ${fullBat.length > (byWeek ? perWeek(SHOW_MANY).length : SHOW_MANY) ? `<button type="button" class="more" data-all="bat" aria-expanded="${pv.batAll}">${pv.batAll ? (byWeek ? "Show fewer" : `Show top ${SHOW_MANY}`) : byWeek ? `Show top ${Math.floor(BAT_MAX / raceWeekCount)} of each week` : `Show top ${fullBat.length}`}</button>` : ""}
+          <ol${bat.depth ? ' class="dh-list"' : ""}>${batRows || `<li class="none">Nothing yet</li>`}</ol>
+          ${fullBat.length > fewBat.length ? `<button type="button" class="more" data-all="bat" aria-expanded="${pv.batAll}">${pv.batAll ? (byTier ? "Show the fastest in each tier" : `Show top ${SHOW_MANY}`) : byTier ? `Show top ${perGroup} in each tier` : `Show top ${fullBat.length}`}</button>` : ""}
+          ${bat.depth ? `<div class="tip" id="dhTip" hidden></div>` : ""}
         </div>
       </section>`;
   }

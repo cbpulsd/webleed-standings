@@ -12,6 +12,7 @@
 
 export const NO_TIME = 900;
 const KEEP = 50; // battles and records kept per week and list
+const FAST_KEEP = 12; // fastest single heat runs kept per week and tier
 
 const r3 = (n) => Math.round(n * 1000) / 1000;
 const r2 = (n) => Math.round(n * 100) / 100;
@@ -132,8 +133,8 @@ export function computePilotStats({ weeks, teams, draft }) {
         const field = tier.entries.filter((e) => timed(e.times[i])).map((e) => ({ name: e.pilot, team: e.sponsor, time: e.times[i] })).sort((a, b) => a.time - b.time);
         const label = `Tier ${tier.tier} · Heat ${i + 1}`;
         pairs(field, { week: w.id, tier: tier.tier, heat: i + 1, label });
-        if (field.length === tier.entries.length && field.length > 1) battles.heats.push({ week: w.id, tier: tier.tier, heat: i + 1, label, gap: r3(field[field.length - 1].time - field[0].time), a: who(field[0]), b: who(field[field.length - 1]) });
-        if (field.length) records.fastest.push({ week: w.id, tier: tier.tier, heat: i + 1, label, ...who(field[0]), time: field[0].time });
+        if (field.length === tier.entries.length && field.length > 1) battles.heats.push({ week: w.id, tier: tier.tier, heat: i + 1, label, gap: r3(field[field.length - 1].time - field[0].time), a: who(field[0]), b: who(field[field.length - 1]), field: field.map((x) => [x.name, x.team, x.time]) });
+        for (const x of field) records.fastest.push({ week: w.id, tier: tier.tier, heat: i + 1, label, ...who(x), time: x.time });
         if (field.length > 1) records.margins.push({ week: w.id, tier: tier.tier, heat: i + 1, label, a: who(field[0]), b: who(field[1]), gap: r3(field[1].time - field[0].time) });
       }
     }
@@ -179,7 +180,8 @@ export function computePilotStats({ weeks, teams, draft }) {
     weeks: weekInfo,
     pilots: [...pilots.values()],
     battles: { close: trim(battles.close, (x) => x.gap), wins: trim(battles.wins, (x) => x.gap), heats: trim(battles.heats, (x) => x.gap), smash: trim(battles.smash, (x) => x.gap) },
-    records: { fastest: trim(records.fastest, (x) => x.time), margins: trim(records.margins, (x) => x.gap, true) },
+    // Fastest heats: each tier's quickest single runs, kept per week and tier.
+    records: { fastest: weekInfo.flatMap((w) => [...new Set(records.fastest.map((x) => x.tier))].sort((a, b) => a - b).flatMap((t) => records.fastest.filter((x) => x.week === w.id && x.tier === t).sort((a, b) => a.time - b.time).slice(0, FAST_KEEP))), margins: trim(records.margins, (x) => x.gap, true) },
   };
 }
 

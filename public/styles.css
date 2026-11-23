@@ -479,3 +479,32 @@ footer{color:var(--muted);font-size:12.5px;display:flex;flex-direction:column;ga
   .lbt .dt-sm{display:block;font:400 11px var(--body);color:var(--muted);white-space:nowrap}
   .chips{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px;margin-right:-16px;padding-right:16px;scrollbar-width:thin}
 }
+
+/* Closest full heats: depth strips */
+.lbx-card.bat{position:relative}
+.dh-list li.dh,.dh-list li.dh-axis{display:grid;grid-template-columns:28px minmax(0,1fr) 64px;align-items:center;gap:10px}
+.dh-list li.dh{padding:8px 0}
+.dh-list li.dh-axis{border-top:none;padding:0 0 2px}
+.dh-main{display:grid;grid-template-columns:minmax(150px,220px) minmax(0,1fr);align-items:center;gap:6px 16px;min-width:0}
+.dh-main .bl{flex-direction:column;align-items:flex-start}
+.dh-l{font-weight:600}
+.dh-ax-l{font:500 10.5px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.dh-track{position:relative;height:22px;margin:0 6px}
+.dh-track::before{content:"";position:absolute;left:0;right:0;top:50%;border-top:1px solid var(--line)}
+.dh-axis .dh-track{height:14px}
+.dh-axis .dh-track::before{display:none}
+.dh-axis i{position:absolute;top:0;transform:translateX(-50%);font:normal 10.5px var(--mono);color:var(--muted);white-space:nowrap}
+.dh-rng{position:absolute;left:0;top:50%;height:2px;margin-top:-1px;background:color-mix(in srgb, var(--ink) 35%, transparent);border-radius:1px}
+.dh-dot{position:absolute;top:50%;width:10px;height:10px;margin:-5px 0 0 -5px;padding:0;border-radius:50%;background:var(--ink);border:2px solid var(--surface);box-sizing:content-box;cursor:pointer}
+.dh-dot::before{content:"";position:absolute;inset:-6px;border-radius:50%}
+.dh-dot.w{background:var(--accent)}
+.dh-dot:hover,.dh-dot:focus-visible{transform:scale(1.35);outline:none;z-index:2}
+.dh-dot:focus-visible{box-shadow:0 0 0 2px var(--accent)}
+.tchip{flex:none;font:500 10.5px var(--mono);letter-spacing:.04em;text-transform:uppercase;color:var(--muted);background:var(--sunken);border:1px solid var(--line);border-radius:4px;padding:2px 6px}
+.bat li.tk{font:600 12px var(--body);color:var(--ink);padding:8px 0 2px;border-top:none}
+@media (max-width:640px){
+  .dh-main{grid-template-columns:minmax(0,1fr)}
+  .dh-ax-l{display:none}
+  .dh-list li.dh,.dh-list li.dh-axis{grid-template-columns:24px minmax(0,1fr) 54px;gap:8px}
+}
+@media (prefers-reduced-motion: reduce){.dh-dot:hover,.dh-dot:focus-visible{transform:none}}
