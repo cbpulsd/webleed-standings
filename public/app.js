@@ -203,7 +203,7 @@
   // One stats page for the season (Spotlight, Race, Smash; season or one week; pilots or teams)
   // and one page per pilot. Links look like #pilots, #pilots/race/2, #pilot/<name>.
   const pv = { page: null, tab: "spotlight", scope: "season", mode: "pilots", q: "", sort: {}, stat: null, statAll: false, bat: null, batAll: false };
-  const SHOW_MANY = 20; // Spotlight leaderboards show the top 20, then everyone
+  const SHOW_MANY = 10; // Spotlight lists show the top 10, opening to everyone (stats) or BAT_MAX (battles)
   const BAT_MAX = 50; // Battles & Records lists open to at most 50 rows
   const PV_TABS = { spotlight: "Spotlight", race: "Race stats", smash: "Smash stats" };
   const MIN_WEEKS = 1; // raced weeks a pilot needs to be ranked on season rates and averages
