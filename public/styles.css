@@ -330,6 +330,7 @@ footer{color:var(--muted);font-size:12.5px;display:flex;flex-direction:column;ga
 #pvSearch{flex:1 1 160px;min-width:0;max-width:240px}
 .pv-scope select:focus-visible,#pvSearch:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .pv-note{font-size:12.5px;max-width:80ch}
+.pv-sub{margin-top:-6px}
 .pv-wrap{max-height:none}
 .pv-table{font-size:13.5px;min-width:max-content}
 .pv-table th,.pv-table td{padding:7px 10px;border-top:1px solid var(--line);white-space:nowrap}

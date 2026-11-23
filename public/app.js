@@ -308,9 +308,11 @@
       <div class="pv-bar">
         <div class="pseg" role="tablist" aria-label="Stats">${Object.entries(PV_TABS).map(([k, l]) => `<button type="button" role="tab" data-tab="${k}" aria-selected="${pv.tab === k}">${l}</button>`).join("")}</div>
         <label class="pv-scope"><span>Show</span><select id="pvScope">${scopes.map(([v, l]) => `<option value="${v}"${String(pv.scope) === String(v) ? " selected" : ""}>${esc(l)}</option>`).join("")}</select></label>
-        ${pv.tab !== "spotlight" ? `<div class="pseg small" role="group" aria-label="Rows">${["pilots", "teams"].map((m) => `<button type="button" data-mode="${m}" aria-pressed="${pv.mode === m}">${m === "pilots" ? "Pilots" : "Teams"}</button>`).join("")}</div>` : ""}
-        ${pv.tab !== "spotlight" && pv.mode === "pilots" ? `<input id="pvSearch" type="search" placeholder="Find a pilot" aria-label="Find a pilot" value="${esc(pv.q)}">` : ""}
       </div>
+      ${pv.tab !== "spotlight" ? `<div class="pv-bar pv-sub">
+        <div class="pseg small" role="group" aria-label="Rows">${["pilots", "teams"].map((m) => `<button type="button" data-mode="${m}" aria-pressed="${pv.mode === m}">${m === "pilots" ? "Pilots" : "Teams"}</button>`).join("")}</div>
+        ${pv.mode === "pilots" ? `<input id="pvSearch" type="search" placeholder="Find a pilot" aria-label="Find a pilot" value="${esc(pv.q)}">` : ""}
+      </div>` : ""}
       <div id="pvBody"></div>`;
     el.querySelector(".pseg[role=tablist]").addEventListener("click", (e) => { const b = e.target.closest("[data-tab]"); if (b) { pv.tab = b.dataset.tab; renderPilotStats(); } });
     el.querySelector("#pvScope").addEventListener("change", (e) => { pv.scope = e.target.value === "season" ? "season" : +e.target.value; renderPilotStats(); });
