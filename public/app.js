@@ -403,7 +403,7 @@
       const t0 = h.field[0][2];
       const dots = h.field.map((x, i) => [...x, i]).reverse().map(([pilot, team, time, i]) => `<button type="button" class="dh-dot${i === 0 ? " w" : ""}" style="left:${X(time - t0)}" data-tip="${esc(pilot)}|${esc(tname(team))}|${i + 1}|${i ? "+" + (time - t0).toFixed(3) + "s" : fmt(time)}" aria-label="${ordinal(i + 1)}: ${esc(pilot)}, ${i ? "+" + (time - t0).toFixed(3) + " seconds" : fmt(time)}"></button>`).join("");
       return `<li class="dh"><span class="medal">${h.n}</span>
-        <div class="dh-main"><div class="bl"><span class="dh-l">${pin(h.a.pilot)} won · ${pin(h.b.pilot)} 10th</span><small>Tier ${h.tier} · ${esc(wname(h.week))} · Heat ${h.heat}</small></div>
+        <div class="dh-main"><div class="bl"><span class="dh-l">Tier ${h.tier} · ${esc(wname(h.week))} · Heat ${h.heat}</span><small>${pin(h.a.pilot)} won · ${pin(h.b.pilot)} 10th</small></div>
           <div class="dh-track" role="group" aria-label="${esc(h.label)}, ${esc(wname(h.week))}: finishers by gap to the winner"><span class="dh-rng" style="width:${X(h.gap)}"></span>${dots}</div></div>
         ${`<b class="gap">${h.gap.toFixed(3)}<small>s</small></b>`}</li>`;
     }).join("");
