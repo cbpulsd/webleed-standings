@@ -739,7 +739,7 @@
       <div class="table-wrap"><table class="overall grid">
         <thead><tr><th class="team-col" scope="col">Team</th>${tiers.map((t) => `<th class="num wk-start" scope="col">Tier ${t}</th>`).join("")}${hasBonus ? `<th class="num wk-start" scope="col">Bonus</th>` : ""}<th class="num tot" scope="col">Total</th><th class="wk-start sit" scope="col">Sitting out</th></tr></thead>
         <tbody>${d.teams.map((t) => `<tr>
-          <th class="team-col" scope="row"><div class="ocell">${place(t.place)}<span class="oname"><b>${esc(tname(t.sponsor))}</b><small>Capt ${pin(t.captain)}</small></span></div></th>
+          <th class="team-col" scope="row"><div class="ocell">${place(t.place)}<span class="oname"><b>${tdot(t.sponsor)}${esc(tname(t.sponsor))}</b><small>Capt ${pin(t.captain)}</small></span></div></th>
           ${tiers.map((ti) => `<td class="num wk-start">${pts(t.byTier[ti])}</td>`).join("")}
           ${hasBonus ? `<td class="num wk-start" title="${t.bonusPlace ? `${ordinal(t.bonusPlace)} in the bonus round: +${t.bonus} to this week's Race points on the Standings tab` : t.seed ? `Seed #${t.seed} in the bonus round` : "Not in the bonus round"}">${t.bonus != null ? "+" + t.bonus : t.seed ? `<span class="tbd">#${t.seed}</span>` : ""}</td>` : ""}
           <td class="num tot">${pts(t.total)}</td>
