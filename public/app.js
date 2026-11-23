@@ -403,7 +403,7 @@
       const t0 = h.field[0][2];
       const dots = h.field.map((x, i) => [...x, i]).reverse().map(([pilot, team, time, i]) => `<button type="button" class="dh-dot${i === 0 ? " w" : ""}" style="left:${X(time - t0)}" data-tip="${esc(pilot)}|${esc(tname(team))}|${i + 1}|${i ? "+" + (time - t0).toFixed(3) + "s" : fmt(time)}" aria-label="${ordinal(i + 1)}: ${esc(pilot)}, ${i ? "+" + (time - t0).toFixed(3) + " seconds" : fmt(time)}"></button>`).join("");
       return `<li class="dh"><span class="medal">${h.n}</span>
-        <div class="dh-main"><div class="bl"><span class="dh-l">${esc(h.label)}</span><small>${esc(wname(h.week))} · ${esc(h.a.pilot)} won, ${esc(h.b.pilot)} 10th</small></div>
+        <div class="dh-main"><div class="bl"><span class="dh-l">${pin(h.a.pilot)} won · ${pin(h.b.pilot)} 10th</span><small>Tier ${h.tier} · ${esc(wname(h.week))} · Heat ${h.heat}</small></div>
           <div class="dh-track" role="group" aria-label="${esc(h.label)}, ${esc(wname(h.week))}: finishers by gap to the winner"><span class="dh-rng" style="width:${X(h.gap)}"></span>${dots}</div></div>
         ${`<b class="gap">${h.gap.toFixed(3)}<small>s</small></b>`}</li>`;
     }).join("");
@@ -504,14 +504,20 @@
     const fullBat = byTier ? bat.items.filter((x) => x.n <= perGroup) : bat.items.slice(0, BAT_MAX);
     const fewBat = byTier ? bat.items.filter((x) => x.n === 1) : bat.items.slice(0, SHOW_MANY);
     const shownBat = pv.batAll ? fullBat : fewBat;
-    let lastWeek = null, lastTier = null;
-    const batRows = bat.depth ? depthRows(shownBat, wname) : shownBat.map((x) => {
-      let head = "";
-      if (byTier && x.week !== lastWeek) { head += `<li class="wk">${esc(wname(x.week))}</li>`; lastTier = null; }
-      if (byTier && pv.batAll && x.tier !== lastTier) head += `<li class="tk">Tier ${x.tier}</li>`;
-      lastWeek = x.week; lastTier = x.tier;
-      return head + (byTier && !pv.batAll ? `<li><span class="tchip">Tier ${x.tier}</span><div class="bl">${pilotLink(x.pilot, x.team)}<small>Heat ${x.heat}</small></div><b class="gap">${fmt(x.time)}</b></li>` : bat.row(x));
-    }).join("");
+    const batRows = bat.depth ? depthRows(shownBat, wname) : byTier ? "" : shownBat.map(bat.row).join("");
+    // Fastest heats: one section per week, side by side when there's room.
+    const fastHtml = !byTier ? "" : `<div class="fwks">${[...new Set(shownBat.map((x) => x.week))].map((wid) => {
+      const w = d.weeks.find((x) => x.id === wid);
+      const rows = shownBat.filter((x) => x.week === wid);
+      let lastT = null;
+      return `<section class="fwk"><h4>${esc(w?.name || "")}${w?.quad ? `<span>${esc(w.quad)}</span>` : ""}</h4><ol>${rows.map((x) => {
+        const head = pv.batAll && x.tier !== lastT ? `<li class="tk">Tier ${x.tier}</li>` : "";
+        lastT = x.tier;
+        return head + (pv.batAll
+          ? `<li><span class="medal">${x.n}</span><div class="bl">${pilotLink(x.pilot, x.team)}<small>Heat ${x.heat}</small></div><b class="gap">${fmt(x.time)}</b></li>`
+          : `<li><span class="tchip">Tier ${x.tier}</span><div class="bl">${pilotLink(x.pilot, x.team)}<small>Heat ${x.heat}</small></div><b class="gap">${fmt(x.time)}</b></li>`);
+      }).join("")}</ol></section>`;
+    }).join("")}</div>`;
 
     const chips = (list, cur, attr, label) => `<div class="chips" role="group" aria-label="${label}">${list.map((x) => `<button type="button" class="chip" data-${attr}="${x.id}" aria-pressed="${x.id === cur.id}">${esc(x.label)}</button>`).join("")}</div>`;
     return `
@@ -528,7 +534,7 @@
         ${chips(bats, bat, "bat", "Battles and records")}
         <div class="chart-card lbx-card bat">
           <div class="lbx-head"><h3>${esc(bat.label)}</h3><p>${esc(bat.about)}</p></div>
-          <ol${bat.depth ? ' class="dh-list"' : ""}>${batRows || `<li class="none">Nothing yet</li>`}</ol>
+          ${byTier ? fastHtml : `<ol${bat.depth ? ' class="dh-list"' : ""}>${batRows || `<li class="none">Nothing yet</li>`}</ol>`}
           ${fullBat.length > fewBat.length ? `<button type="button" class="more" data-all="bat" aria-expanded="${pv.batAll}">${pv.batAll ? (byTier ? "Show the fastest in each tier" : `Show top ${SHOW_MANY}`) : byTier ? `Show top ${perGroup} in each tier` : `Show top ${fullBat.length}`}</button>` : ""}
           ${bat.depth ? `<div class="tip" id="dhTip" hidden></div>` : ""}
         </div>
