@@ -329,7 +329,8 @@ footer{color:var(--muted);font-size:12.5px;display:flex;flex-direction:column;ga
 .pv-scope select,#pvSearch{font:14px var(--body);color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:6px 8px}
 #pvSearch{flex:1 1 160px;min-width:0;max-width:240px}
 .pv-scope select:focus-visible,#pvSearch:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-.pv-note{font-size:12.5px;max-width:80ch}
+.pv-note{font-size:12.5px;max-width:none}
+.chart-card > p.sub{max-width:none}
 .pv-sub{margin-top:-6px}
 .pv-wrap{max-height:none}
 .pv-table{font-size:13.5px;min-width:max-content}
@@ -453,7 +454,7 @@ footer{color:var(--muted);font-size:12.5px;display:flex;flex-direction:column;ga
 .chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .lbx-card{display:flex;flex-direction:column;gap:8px}
 .lbx-head h3{margin:0;font:600 18px var(--display);letter-spacing:.01em}
-.lbx-head p{margin:2px 0 0;font-size:12.5px;color:var(--muted);max-width:80ch}
+.lbx-head p{margin:2px 0 0;font-size:12.5px;color:var(--muted)}
 .lbt{min-width:0;width:100%}
 .lbt .rk{width:2.5rem}
 .lbt .who{min-width:0;box-shadow:none}
