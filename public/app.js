@@ -23,6 +23,8 @@
     RadioMaster: { name: "Zeeb team 5", key: "radio" },
   };
   const tname = (sp) => TEAM_LOOK[sp]?.name || sp;
+  // A pilot's name as a link to their page on the Pilots tab.
+  const pin = (name) => (name ? `<a class="pin" href="#pilot/${encodeURIComponent(name)}">${esc(name)}</a>` : "");
   const tcolor = (sp) => (TEAM_LOOK[sp] ? `var(--tm-${TEAM_LOOK[sp].key})` : "var(--muted)");
   const tdot = (sp) => `<i class="tdot" style="background:${tcolor(sp)}" aria-hidden="true"></i>`;
   const fmt = (t) => t.toFixed(3);
@@ -64,7 +66,7 @@
     el.style.setProperty("--n", state.tracks.length + 2);
     el.innerHTML =
       `<button class="track-tab overall-tab" role="tab" type="button" data-id="${OVERALL}" data-status="overall"
-        aria-selected="${isOverall()}"><span>Overall</span></button>` +
+        aria-selected="${isOverall()}"><span>Standings</span></button>` +
       `<button class="track-tab overall-tab" role="tab" type="button" data-id="${PILOTS}" data-status="overall"
         aria-selected="${isPilots()}"><span>Pilots</span></button>` +
       state.tracks
@@ -95,7 +97,7 @@
     state.data = null;
     state.races = null;
     state.stats = null;
-    try { if (id === PILOTS) setPilotsHash(); else history.replaceState(null, "", id === OVERALL ? "#overall" : "#track-" + id); } catch (e) {}
+    try { if (id === PILOTS) setPilotsHash(); else history.replaceState(null, "", id === OVERALL ? "#standings" : "#track-" + id); } catch (e) {}
     renderTabs();
     renderHeader();
     applyLayout();
@@ -127,8 +129,8 @@
       return;
     }
     if (isOverall()) {
-      $("title").textContent = "Overall Standings";
-      document.title = "Season 5 Overall Standings";
+      $("title").textContent = "Season Standings";
+      document.title = "Season 5 Standings";
       $("sub").textContent = "Season points for each team. Each week, Smash gives 10 points for 1st down to 1 for 10th, Races give 20 for 1st down to 2 for 10th, and the bonus round adds 3, 2, 1 or 0 to the top four's Race points. A week's Smash points come in when its track locks, and its Race points once every race is in.";
       return;
     }
@@ -188,7 +190,7 @@
     const head2 = d.weeks.map(() => `<th class="sub wk-start" scope="col">Smash</th><th class="sub" scope="col">Race</th>`).join("");
     const body = d.teams
       .map((t) => `<tr>
-        <th class="team-col" scope="row"><div class="ocell">${t.position != null ? `<span class="opos">${t.position}</span>` : ""}<span class="oname"><b>${tdot(t.sponsor)}${esc(tname(t.sponsor))}</b><small>${esc(t.sponsor)} · Capt ${esc(t.captain)}</small></span></div></th>
+        <th class="team-col" scope="row"><div class="ocell">${t.position != null ? `<span class="opos">${t.position}</span>` : ""}<span class="oname"><b>${tdot(t.sponsor)}${esc(tname(t.sponsor))}</b><small>${esc(t.sponsor)} · Capt ${pin(t.captain)}</small></span></div></th>
         ${d.weeks.map((w) => { const c = t.weeks[w.id] || {}; return `<td class="num wk-start">${pts(c.smash)}</td><td class="num"${c.raceBonus ? ` title="${c.race - c.raceBonus} for race place + ${c.raceBonus} bonus round"` : ""}>${pts(c.race)}${c.raceBonus ? `<small class="bonus-note">+${c.raceBonus}</small>` : ""}</td>`; }).join("")}
         <td class="num tot">${pts(t.total)}</td>
       </tr>`)
@@ -304,6 +306,7 @@
     if (!d.weeks.length) { el.innerHTML = `<div class="empty">Pilot stats start once the first track locks.</div>`; return; }
     if (pv.scope !== "season" && !d.weeks.some((w) => w.id === pv.scope)) pv.scope = "season";
     setPilotsHash();
+    renderHeader(); // the heading names the pilot once their stats are loaded
     if (pv.page) return renderPilotPage(el, d);
 
     const raceWeeks = d.weeks.filter((w) => w.races);
@@ -639,7 +642,7 @@
           <div class="pos">${t.position}</div>
           <div class="tname">
             <h2>${tdot(t.sponsor)}${esc(tname(t.sponsor))}</h2>
-            <p>${esc(t.sponsor)} · Captain ${esc(t.captain)}<span class="posted${t.posted === t.size ? " full" : ""}">${t.posted}/${t.size} posted</span></p>
+            <p>${esc(t.sponsor)} · Captain ${pin(t.captain)}<span class="posted${t.posted === t.size ? " full" : ""}">${t.posted}/${t.size} posted</span></p>
           </div>
           <div class="total">
             <div class="t">${fmt(t.total)}</div>
@@ -648,7 +651,7 @@
         </div>
         <table class="pilots"><tbody>
           ${t.pilots.map((p) => `<tr class="${p.posted ? "" : "notime"}">
-            <td class="name">${esc(p.name)}${p.captain ? '<span class="cap">Capt</span>' : ""}</td>
+            <td class="name">${pin(p.name)}${p.captain ? '<span class="cap">Capt</span>' : ""}</td>
             <td class="lb"${leagueLb(p) ? ` title="${ordinal(leagueLb(p))} of the ${timed.length} league pilots with a time"` : ""}>${p.override ? "set by league" : leagueLb(p) ? "LB #" + leagueLb(p) : ""}</td>
             <td class="time">${p.posted ? fmt(p.time) + ovr(p) : NO_TIME.toFixed(2)}</td>
           </tr>`).join("")}
@@ -661,7 +664,7 @@
     $("pilotRows").innerHTML = all
       .map((p) => `<tr class="${p.posted ? "" : "muted"}">
         <td class="num">${p.posted ? ++n : "–"}</td>
-        <td>${esc(p.name)}${p.captain ? '<span class="cap">Capt</span>' : ""}</td>
+        <td>${pin(p.name)}${p.captain ? '<span class="cap">Capt</span>' : ""}</td>
         <td class="muted">${esc(tname(p.team))}</td>
         <td class="num muted">${p.lb ? "#" + p.lb : ""}</td>
         <td class="num">${p.posted ? fmt(p.time) + ovr(p) : NO_TIME.toFixed(2)}</td>
@@ -736,13 +739,13 @@
       <div class="table-wrap"><table class="overall grid">
         <thead><tr><th class="team-col" scope="col">Team</th>${tiers.map((t) => `<th class="num wk-start" scope="col">Tier ${t}</th>`).join("")}${hasBonus ? `<th class="num wk-start" scope="col">Bonus</th>` : ""}<th class="num tot" scope="col">Total</th><th class="wk-start sit" scope="col">Sitting out</th></tr></thead>
         <tbody>${d.teams.map((t) => `<tr>
-          <th class="team-col" scope="row"><div class="ocell">${place(t.place)}<span class="oname"><b>${esc(tname(t.sponsor))}</b><small>Capt ${esc(t.captain)}</small></span></div></th>
+          <th class="team-col" scope="row"><div class="ocell">${place(t.place)}<span class="oname"><b>${esc(tname(t.sponsor))}</b><small>Capt ${pin(t.captain)}</small></span></div></th>
           ${tiers.map((ti) => `<td class="num wk-start">${pts(t.byTier[ti])}</td>`).join("")}
-          ${hasBonus ? `<td class="num wk-start" title="${t.bonusPlace ? `${ordinal(t.bonusPlace)} in the bonus round: +${t.bonus} to this week's Race points on the Overall table` : t.seed ? `Seed #${t.seed} in the bonus round` : "Not in the bonus round"}">${t.bonus != null ? "+" + t.bonus : t.seed ? `<span class="tbd">#${t.seed}</span>` : ""}</td>` : ""}
+          ${hasBonus ? `<td class="num wk-start" title="${t.bonusPlace ? `${ordinal(t.bonusPlace)} in the bonus round: +${t.bonus} to this week's Race points on the Standings tab` : t.seed ? `Seed #${t.seed} in the bonus round` : "Not in the bonus round"}">${t.bonus != null ? "+" + t.bonus : t.seed ? `<span class="tbd">#${t.seed}</span>` : ""}</td>` : ""}
           <td class="num tot">${pts(t.total)}</td>
-          <td class="wk-start sit">${t.sitting ? esc(t.sitting) : '<span class="tbd">TBD</span>'}</td>
+          <td class="wk-start sit">${t.sitting ? pin(t.sitting) : '<span class="tbd">TBD</span>'}</td>
         </tr>`).join("")}</tbody>
-      </table></div>${hasBonus ? `<p class="sub">Total is the tier races only. Bonus round points aren't added here; they go on top of the team's Race points for the week on the Overall table.</p>` : ""}`;
+      </table></div>${hasBonus ? `<p class="sub">Total is the tier races only. Bonus round points aren't added here; they go on top of the team's Race points for the week on the Standings tab.</p>` : ""}`;
   }
 
   // ---------- bonus round ----------
@@ -853,7 +856,7 @@
         <div class="table-wrap"><table class="overall grid">
           <thead><tr><th class="team-col" scope="col">Team · Pilot</th>${Array.from({ length: d.racesPerTier }, (_, i) => `<th class="num${i === 0 ? " wk-start" : ""}" scope="col">R${i + 1}</th>`).join("")}<th class="num tot" scope="col">Total</th></tr></thead>
           <tbody>${t.entries.map((e) => `<tr>
-            <th class="team-col" scope="row"><div class="ocell">${place(e.place)}<span class="oname"><b>${esc(tname(e.sponsor))}</b><small>${pilotLabel(e.pilot)}</small></span></div></th>
+            <th class="team-col" scope="row"><div class="ocell">${place(e.place)}<span class="oname"><b>${esc(tname(e.sponsor))}</b><small>${e.pilot ? pin(e.pilot) : pilotLabel(e.pilot)}</small></span></div></th>
             ${e.points.map((p, i) => { const tm = e.times?.[i]; return `<td class="num rc${i === 0 ? " wk-start" : ""}"${tm != null ? ` title="${resultTitle(tm, e.positions[i])}"` : ""}>${tm == null ? pts(p) : `<b>${pts(p)}</b><small${tm === "dnf" ? ' class="dnf"' : ""}>${fmtTime(tm)}</small>`}</td>`; }).join("")}
             <td class="num tot">${pts(e.total)}</td>
           </tr>`).join("")}</tbody>
@@ -937,7 +940,7 @@
         <div class="sec-head"><h2>Top of each tier</h2><span>fastest three</span></div>
         <div class="tier-grid">${d.tiers.map((t) => `<div class="tier-card">
           <h3><i style="background:var(--t${t.tier})"></i>Tier ${t.tier}</h3>
-          <ol>${t.fastest.map((p, i) => `<li><span>${i + 1}. ${esc(p.pilot)}<small>${esc(tname(p.team))}</small></span><b>${secs(p.time)}</b></li>`).join("") || "<li>No times yet</li>"}</ol>
+          <ol>${t.fastest.map((p, i) => `<li><span>${i + 1}. ${pin(p.pilot)}<small>${esc(tname(p.team))}</small></span><b>${secs(p.time)}</b></li>`).join("") || "<li>No times yet</li>"}</ol>
         </div>`).join("")}</div>
       </section>
 
@@ -957,14 +960,14 @@
       <section class="chart-card" aria-label="Biggest grinders">
         <div class="sec-head"><h2>Biggest grinders</h2><span>most new personal bests</span></div>
         <table class="stbl"><thead><tr><th class="num">#</th><th>Pilot</th><th class="num">PBs</th><th class="num">Best</th></tr></thead><tbody>
-          ${d.grinders.map((p, i) => `<tr><td class="num">${i + 1}</td><td>${esc(p.pilot)}<small>${esc(tname(p.team))}</small></td><td class="num">${p.pbs}</td><td class="num">${secs(p.best)}<small>from ${secs(p.first)}</small></td></tr>`).join("")}
+          ${d.grinders.map((p, i) => `<tr><td class="num">${i + 1}</td><td>${pin(p.pilot)}<small>${esc(tname(p.team))}</small></td><td class="num">${p.pbs}</td><td class="num">${secs(p.best)}<small>from ${secs(p.first)}</small></td></tr>`).join("")}
         </tbody></table>
       </section>
 
       ${d.smallestGrinders?.length ? `<section class="chart-card" aria-label="Smallest grinders">
         <div class="sec-head"><h2>Smallest grinders</h2><span>fewest new personal bests</span></div>
         <table class="stbl"><thead><tr><th class="num">#</th><th>Pilot</th><th class="num">PBs</th><th class="num">Best</th></tr></thead><tbody>
-          ${d.smallestGrinders.map((p, i) => `<tr><td class="num">${i + 1}</td><td>${esc(p.pilot)}<small>${esc(tname(p.team))}</small></td><td class="num">${p.pbs}</td><td class="num">${secs(p.best)}<small>${p.pbs ? `from ${secs(p.first)}` : "first time"}</small></td></tr>`).join("")}
+          ${d.smallestGrinders.map((p, i) => `<tr><td class="num">${i + 1}</td><td>${pin(p.pilot)}<small>${esc(tname(p.team))}</small></td><td class="num">${p.pbs}</td><td class="num">${secs(p.best)}<small>${p.pbs ? `from ${secs(p.first)}` : "first time"}</small></td></tr>`).join("")}
         </tbody></table>
         <p class="sub">Rostered pilots with a time on this track, fewest new personal bests first. Level on new bests, the pilot who cut the least time from their first time ranks first.</p>
       </section>` : ""}
@@ -1047,7 +1050,7 @@
     return `<section class="chart-card" aria-label="${esc(title)}">
       <div class="sec-head"><h2>${esc(title)}</h2><span>${esc(sub)}</span></div>
       <table class="stbl"><thead><tr><th>Pilot</th><th class="num">Draft → LB</th><th class="num">Moved</th></tr></thead><tbody>
-        ${list.map((m) => `<tr><td>${esc(m.pilot)}<small>${esc(tname(m.team))} · ${m.captain ? "captain" : `round ${m.round}, pick ${m.pick}`}</small></td><td class="num">#${m.pos} → #${m.lb}<small>${secs(m.time)}</small></td><td class="num mv ${dir}">${dir === "up" ? "▲" : "▼"} ${Math.abs(m.moved)}</td></tr>`).join("") || `<tr><td colspan="3">Nobody yet</td></tr>`}
+        ${list.map((m) => `<tr><td>${pin(m.pilot)}<small>${esc(tname(m.team))} · ${m.captain ? "captain" : `round ${m.round}, pick ${m.pick}`}</small></td><td class="num">#${m.pos} → #${m.lb}<small>${secs(m.time)}</small></td><td class="num mv ${dir}">${dir === "up" ? "▲" : "▼"} ${Math.abs(m.moved)}</td></tr>`).join("") || `<tr><td colspan="3">Nobody yet</td></tr>`}
       </tbody></table>
     </section>`;
   }
@@ -1056,7 +1059,7 @@
     return `<section class="chart-card" aria-label="${esc(title)}">
       <div class="sec-head"><h2>${esc(title)}</h2><span>${esc(sub)}</span></div>
       <table class="stbl"><thead><tr><th>Pilot</th><th class="num">Tryout → now</th><th class="num">Moved</th></tr></thead><tbody>
-        ${list.map((m) => `<tr><td>${esc(m.pilot)}<small>${esc(tname(m.team))} · tryout #${m.draftRank}</small></td><td class="num">${ordinal(m.draftPlace)} → ${ordinal(m.weekPlace)}<small>${secs(m.time)}</small></td><td class="num mv ${dir}">${dir === "up" ? "▲" : "▼"} ${Math.abs(m.moved)}</td></tr>`).join("") || `<tr><td colspan="3">Nobody yet</td></tr>`}
+        ${list.map((m) => `<tr><td>${pin(m.pilot)}<small>${esc(tname(m.team))} · tryout #${m.draftRank}</small></td><td class="num">${ordinal(m.draftPlace)} → ${ordinal(m.weekPlace)}<small>${secs(m.time)}</small></td><td class="num mv ${dir}">${dir === "up" ? "▲" : "▼"} ${Math.abs(m.moved)}</td></tr>`).join("") || `<tr><td colspan="3">Nobody yet</td></tr>`}
       </tbody></table>
     </section>`;
   }
@@ -1171,7 +1174,7 @@
     const d = r.data;
     if (!d.tierResults.some((t) => t.racesRun)) { el.innerHTML = `<div class="empty">Race stats appear once race day results are entered.</div>`; return; }
     const s = raceStatsData(d);
-    const who = (p, extra = "") => `${esc(p.pilot)}<small>${esc(tname(p.team))} · Tier ${p.tier}${extra}</small>`;
+    const who = (p, extra = "") => `${pin(p.pilot)}<small>${esc(tname(p.team))} · Tier ${p.tier}${extra}</small>`;
     const list = (title, sub, head, rows, empty) => `<section class="chart-card" aria-label="${esc(title)}">
         <div class="sec-head"><h2>${esc(title)}</h2><span>${esc(sub)}</span></div>
         <table class="stbl"><thead><tr><th>Pilot</th>${head.map((h) => `<th class="num">${h}</th>`).join("")}</tr></thead><tbody>
@@ -1191,7 +1194,7 @@
         <div class="sec-head"><h2>Tier MVPs</h2><span>most points in each tier</span></div>
         <div class="tier-grid">${s.mvps.map((m) => `<div class="tier-card">
           <h3><i style="background:var(--t${m.tier})"></i>Tier ${m.tier}</h3>
-          <ol>${m.top.map((p, i) => `<li><span>${i + 1}. ${esc(p.pilot)}<small>${esc(tname(p.team))}</small></span><b>${p.points} pts</b></li>`).join("") || "<li>No results yet</li>"}</ol>
+          <ol>${m.top.map((p, i) => `<li><span>${i + 1}. ${pin(p.pilot)}<small>${esc(tname(p.team))}</small></span><b>${p.points} pts</b></li>`).join("") || "<li>No results yet</li>"}</ol>
           ${m.top[0] ? `<p class="sub">${m.top[0].wins} win${m.top[0].wins === 1 ? "" : "s"} · average finish ${m.top[0].avgFinish.toFixed(1)}</p>` : ""}
         </div>`).join("")}</div>
       </section>
@@ -1698,7 +1701,7 @@
       return;
     }
     if (adminIdFromHash()) { state.error = null; state.current = adminIdFromHash(); return enterAdmin(adminIdFromHash()); }
-    if (location.hash === "#overall") { state.error = null; return selectTrack(OVERALL); }
+    if (location.hash === "#overall" || location.hash === "#standings") { state.error = null; return selectTrack(OVERALL); }
     if (readPilotsHash()) { state.error = null; return selectTrack(PILOTS); }
     const fromHash = +((location.hash.match(/^#track-(\d+)$/) || [])[1] || 0);
     const pick =
@@ -1718,8 +1721,8 @@
       const back = +((location.hash.match(/^#track-(\d+)$/) || [])[1] || adm.id);
       return selectTrack(back, true);
     }
-    if (location.hash === "#overall") return selectTrack(OVERALL);
-    if (readPilotsHash()) return selectTrack(PILOTS, true);
+    if (location.hash === "#overall" || location.hash === "#standings") return selectTrack(OVERALL);
+    if (readPilotsHash()) { if (pv.page) window.scrollTo({ top: 0 }); return selectTrack(PILOTS, true); }
     const id = +((location.hash.match(/^#track-(\d+)$/) || [])[1] || 0);
     const t = state.tracks.find((x) => x.id === id);
     if (t && t.status !== "upcoming") selectTrack(id);
