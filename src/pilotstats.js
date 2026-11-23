@@ -11,7 +11,7 @@
 // but are left out of anything worked out from times (averages, spread, best heat, battles).
 
 export const NO_TIME = 900;
-const KEEP = 20; // battles and records kept per week and list
+const KEEP = 50; // battles and records kept per week and list
 
 const r3 = (n) => Math.round(n * 1000) / 1000;
 const r2 = (n) => Math.round(n * 100) / 100;

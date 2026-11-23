@@ -440,3 +440,42 @@ footer{color:var(--muted);font-size:12.5px;display:flex;flex-direction:column;ga
   #pvSearch{max-width:none}
 }
 @media (prefers-reduced-motion: reduce){.pblog summary h3::before{transition:none}}
+
+/* Spotlight: stat leaderboards and battles, picked with chips */
+.lbx{display:flex;flex-direction:column;gap:8px}
+.lbx .sec-head{margin:0}
+.lbx .hint{margin:-2px 0 2px;font-size:13px;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font:600 13px var(--body);color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:6px 12px;cursor:pointer;white-space:nowrap}
+.chip:hover{border-color:color-mix(in srgb, var(--ink) 40%, transparent)}
+.chip[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--surface)}
+.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.lbx-card{display:flex;flex-direction:column;gap:8px}
+.lbx-head h3{margin:0;font:600 18px var(--display);letter-spacing:.01em}
+.lbx-head p{margin:2px 0 0;font-size:12.5px;color:var(--muted);max-width:80ch}
+.lbt{min-width:0;width:100%}
+.lbt .rk{width:2.5rem}
+.lbt .who{min-width:0;box-shadow:none}
+.lbt td.val{font-weight:600;font-size:14px}
+.lbt .dt{color:var(--muted);font-size:12.5px;text-align:left;width:40%}
+.lbt .tm{color:var(--muted);font-size:13px}
+.lbt .tm-sm{display:none!important}
+.lbt .dt-sm{display:none}
+.lbt tr.top .who .plink{font-weight:700}
+.lbx-card .more{align-self:flex-start;font:600 12.5px var(--body);color:var(--muted);background:none;border:0;padding:2px 0;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.lbx-card .more::after{content:"";width:6px;height:6px;border-right:1.6px solid currentColor;border-bottom:1.6px solid currentColor;transform:rotate(45deg) translate(-2px,-2px)}
+.lbx-card .more[aria-expanded="true"]::after{transform:rotate(-135deg) translate(-1px,-1px)}
+.lbx-card .more:hover{color:var(--accent)}
+.lbx-card .more:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+.bat li{gap:10px}
+.bat li .medal{flex:none;min-width:20px;width:auto;padding:0 4px;font-size:10.5px}
+.bat li .bl{flex:1}
+.bat li.wk{font:500 10.5px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding-top:10px}
+.bat li.wk:first-child{padding-top:0}
+@media (max-width:640px){
+  .lbt .tm{display:none}
+  .lbt .tm-sm{display:block!important}
+  .lbt .dt{display:none}
+  .lbt .dt-sm{display:block;font:400 11px var(--body);color:var(--muted);white-space:nowrap}
+  .chips{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px;margin-right:-16px;padding-right:16px;scrollbar-width:thin}
+}
