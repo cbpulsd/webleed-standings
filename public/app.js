@@ -554,7 +554,7 @@
         ${raceCells}<td class="num">${wk.bonus ? wk.bonus.points : "–"}</td></tr>`;
     }).join("");
 
-    const heatCell = (h, max) => `<div class="hc${h.pos === 1 ? " win" : h.pos && h.pos <= 3 ? " top3" : ""}${h.time == null ? " nt" : ""}" title="${h.time == null ? (h.dnf ? "DNF" : "No time") : fmt(h.time) + "s"}, ${h.pos ? ordinal(h.pos) + " of " + max : "no place"}, ${h.pts} pts"><b>${h.pos ? ordinal(h.pos) : "–"}</b><span>${h.time == null ? (h.dnf ? "DNF" : "no time") : fmt(h.time)}</span></div>`;
+    const heatCell = (h, max) => `<div class="hc${h.pos >= 1 && h.pos <= 3 ? " p" + h.pos : ""}${h.time == null ? " nt" : ""}" title="${h.time == null ? (h.dnf ? "DNF" : "No time") : fmt(h.time) + "s"}, ${h.pos ? ordinal(h.pos) + " of " + max : "no place"}, ${h.pts} pts"><b>${h.pos ? ordinal(h.pos) : "–"}</b><span>${h.time == null ? (h.dnf ? "DNF" : "no time") : fmt(h.time)}</span></div>`;
     const heatsHtml = raced.map((w) => {
       const wk = p.weeks[w.id], r = wk.race;
       if (!r) return "";
@@ -600,7 +600,7 @@
         <p class="sub">LB # is their place among the league's 50 pilots; % off is the gap to that week's fastest league time. Place is their finish in their tier for the day.</p>
       </section>
       ${heatsHtml ? `<section class="chart-card"><div class="sec-head"><h2>Heat results</h2><span>place and time, tier heats then bonus round</span></div><div class="hweeks">${heatsHtml}</div>
-        <div class="hkey"><span><i class="win"></i>Win</span><span><i class="top3"></i>2nd–3rd</span><span><i></i>4th or lower</span></div></section>` : ""}
+        <div class="hkey"><span><b class="p1">1st</b>gold</span><span><b class="p2">2nd</b>silver</span><span><b class="p3">3rd</b>bronze</span></div></section>` : ""}
       ${logs ? `<section class="chart-card"><div class="sec-head"><h2>Leaderboard grind</h2><span>new personal bests before each lock</span></div>${logs}</section>` : ""}`;
   }
   const dayShort = new Intl.DateTimeFormat([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
