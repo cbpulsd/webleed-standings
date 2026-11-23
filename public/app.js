@@ -54,14 +54,19 @@
 
   // ---------- tabs: Overall, then one per track ----------
   const OVERALL = "overall";
+  const PILOTS = "pilots";
   const isOverall = () => state.current === OVERALL;
+  const isPilots = () => state.current === PILOTS;
+  const isSeasonTab = () => isOverall() || isPilots();
 
   function renderTabs() {
     const el = $("trackTabs");
-    el.style.setProperty("--n", state.tracks.length + 1);
+    el.style.setProperty("--n", state.tracks.length + 2);
     el.innerHTML =
       `<button class="track-tab overall-tab" role="tab" type="button" data-id="${OVERALL}" data-status="overall"
         aria-selected="${isOverall()}"><span>Overall</span></button>` +
+      `<button class="track-tab overall-tab" role="tab" type="button" data-id="${PILOTS}" data-status="overall"
+        aria-selected="${isPilots()}"><span>Pilots</span></button>` +
       state.tracks
       .map((t) => {
         const off = t.status === "upcoming";
@@ -73,11 +78,11 @@
   }
   $("trackTabs").addEventListener("click", (e) => {
     const b = e.target.closest(".track-tab");
-    if (b && !b.disabled) selectTrack(b.dataset.id === OVERALL ? OVERALL : +b.dataset.id);
+    if (b && !b.disabled) { if (b.dataset.id === PILOTS) pv.page = null; selectTrack(b.dataset.id === OVERALL || b.dataset.id === PILOTS ? b.dataset.id : +b.dataset.id, b.dataset.id === PILOTS); }
   });
   $("trackTabs").addEventListener("keydown", (e) => {
     if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
-    const open = [{ id: OVERALL }, ...state.tracks.filter((t) => t.status !== "upcoming")];
+    const open = [{ id: OVERALL }, { id: PILOTS }, ...state.tracks.filter((t) => t.status !== "upcoming")];
     const i = open.findIndex((t) => t.id === state.current);
     const next = open[(i + (e.key === "ArrowRight" ? 1 : -1) + open.length) % open.length];
     if (next) { selectTrack(next.id); document.querySelector(`.track-tab[data-id="${next.id}"]`)?.focus(); }
@@ -85,11 +90,12 @@
 
   function selectTrack(id, force = false) {
     if (id === state.current && state.data && !force) return;
+    if (id === PILOTS && state.current === PILOTS && state.data) { setPilotsHash(); renderTabs(); renderHeader(); return renderPilotStats(); }
     state.current = id;
     state.data = null;
     state.races = null;
     state.stats = null;
-    try { history.replaceState(null, "", id === OVERALL ? "#overall" : "#track-" + id); } catch (e) {}
+    try { if (id === PILOTS) setPilotsHash(); else history.replaceState(null, "", id === OVERALL ? "#overall" : "#track-" + id); } catch (e) {}
     renderTabs();
     renderHeader();
     applyLayout();
@@ -98,9 +104,10 @@
 
   // The Overall tab shows the season table instead of the Teams/Pilots views.
   function applyLayout() {
-    const o = isOverall();
+    const o = isSeasonTab();
     document.querySelector(".views").hidden = o;
-    $("viewOverall").hidden = !o;
+    $("viewOverall").hidden = !isOverall();
+    $("viewPilotStats").hidden = !isPilots();
     document.querySelector(".wrap").classList.toggle("wide", o);
     if (o) { $("viewTeams").hidden = true; $("viewPilots").hidden = true; $("viewRaces").hidden = true; $("viewStats").hidden = true; $("viewRaceStats").hidden = true; liveStop(); }
     else showView(state.view);
@@ -110,6 +117,15 @@
   function currentTrack() { return state.tracks.find((t) => t.id === state.current) || null; }
 
   function renderHeader() {
+    if (isPilots()) {
+      const p = pv.page && state.data?.pilots?.find((x) => x.name === pv.page);
+      $("title").textContent = p ? p.name : "Pilot Stats";
+      document.title = p ? `${p.name} · Season 5 Pilot Stats` : "Season 5 Pilot Stats";
+      $("sub").textContent = p
+        ? `${tname(p.team)}${p.captain ? " captain" : ""}. Every week's leaderboard time, race heats and bonus round, plus the season so far.`
+        : "Every league pilot's stats from the locked weeks: race heats, the bonus round, and each week's leaderboard. Pick a pilot for their own page.";
+      return;
+    }
     if (isOverall()) {
       $("title").textContent = "Overall Standings";
       document.title = "Season 5 Overall Standings";
@@ -134,6 +150,12 @@
     const d = state.data, t = currentTrack();
     if (state.loading && !d) return setStatus("busy", "Loading standings…");
     if (state.error && !d) return setStatus("error", `Couldn't load standings (${state.error}). Trying again in a few minutes.`);
+    if (d && isPilots()) {
+      const raced = d.weeks.filter((w) => w.races);
+      return raced.length || d.weeks.length
+        ? setStatus("final", `Season so far: ${d.weeks.length} locked week${d.weeks.length === 1 ? "" : "s"}, ${raced.length} race day${raced.length === 1 ? "" : "s"}.`, [`Races through <b>${esc(raced.at(-1)?.name || "–")}</b>`])
+        : setStatus("idle", "No locked weeks yet. Pilot stats start once the first track locks.");
+    }
     if (d && isOverall()) {
       const any = d.teams.some((x) => x.total != null);
       return any
@@ -177,9 +199,304 @@
       </thead><tbody>${body}</tbody>`;
   }
 
+  // ---------- pilots tab ----------
+  // One stats page for the season (Spotlight, Race, Smash; season or one week; pilots or teams)
+  // and one page per pilot. Links look like #pilots, #pilots/race/2, #pilot/<name>.
+  const pv = { page: null, tab: "spotlight", scope: "season", mode: "pilots", q: "", sort: {} };
+  const PV_TABS = { spotlight: "Spotlight", race: "Race stats", smash: "Smash stats" };
+  const MIN_WEEKS = 2; // season rate stats (per week, %, averages) need this many raced weeks to rank
+
+  function readPilotsHash() {
+    const h = location.hash;
+    let m = h.match(/^#pilot\/(.+)$/);
+    if (m) { pv.page = decodeURIComponent(m[1]); return true; }
+    m = h.match(/^#pilots(?:\/(spotlight|race|smash))?(?:\/(\d+))?$/);
+    if (!m) return false;
+    pv.page = null;
+    if (m[1]) pv.tab = m[1];
+    pv.scope = m[2] ? +m[2] : "season";
+    return true;
+  }
+  function setPilotsHash() {
+    const h = pv.page ? `#pilot/${encodeURIComponent(pv.page)}` : `#pilots${pv.tab !== "spotlight" || pv.scope !== "season" ? "/" + pv.tab : ""}${pv.scope !== "season" ? "/" + pv.scope : ""}`;
+    if (location.hash !== h) { try { history.replaceState(null, "", h); } catch (e) {} }
+  }
+  const pilotLink = (name, team, extra = "") => `<a class="plink" href="#pilot/${encodeURIComponent(name)}">${tdot(team)}<span>${esc(name)}</span></a>${extra}`;
+  const n2 = (v, d = 2) => (v == null ? "–" : (+v).toFixed(d));
+  const num = (v, d = 0) => (v == null ? "–" : (+v).toFixed(d));
+  const signed = (v, d = 1) => (v == null ? "–" : v > 0 ? `<span class="up">▲${(+v).toFixed(d)}</span>` : v < 0 ? `<span class="down">▼${(-v).toFixed(d)}</span>` : "0");
+  const pct = (v) => (v == null ? "–" : `${(+v).toFixed(1)}%`);
+  const scopeName = (d) => (pv.scope === "season" ? "Season so far" : d.weeks.find((w) => w.id === pv.scope)?.name || "");
+
+  // A pilot's numbers for the chosen scope, with the same keys for the season and a single week.
+  function raceRow(p, d) {
+    if (pv.scope === "season") {
+      const s = p.season;
+      if (!s.weeksRaced) return null;
+      return { p, weeks: s.weeksRaced, pts: s.points, ppw: s.ptsPerWeek, wins: s.wins, winPct: s.winPct, podPct: s.podiumPct, fin: s.avgFinish, bhr: s.avgBestHeatRank, spread: s.spreadPct, bonus: s.bonusPoints, streak: s.streak, ok: s.weeksRaced >= MIN_WEEKS };
+    }
+    const w = p.weeks[pv.scope], r = w?.race;
+    if (!r || r.sat) return null;
+    const ran = r.heats.filter((h) => h.pos).length;
+    return { p, tier: r.tier, pts: r.points, place: r.place, wins: r.wins, winPct: ran ? (r.wins / ran) * 100 : null, podPct: ran ? (r.podiums / ran) * 100 : null, fin: r.avgFinish, bhr: r.bestHeatRank, spread: r.spreadPct, bonus: w.bonus?.points ?? null, ok: true };
+  }
+  function smashRow(p, d) {
+    if (pv.scope === "season") {
+      const s = p.season;
+      if (!s.smashWeeks) return null;
+      return { p, avg: s.avgRank, best: s.bestRank, off: s.avgPctOff, total: s.smashTotal, pbs: s.pbs, top10: s.top10, vsDraft: s.vsDraft, vsTryout: s.vsTryout, ok: true };
+    }
+    const sm = p.weeks[pv.scope]?.smash;
+    if (!sm || sm.rank == null) return null;
+    return { p, time: sm.time, rank: sm.rank, off: sm.pctOff, pbs: sm.pbs, teamTier: sm.teamTier, vsDraft: p.draftPos != null ? p.draftPos - sm.rank : null, vsTryout: p.tryoutPlace != null ? p.tryoutPlace - sm.rank : null, ok: true };
+  }
+
+  // Team rows: the team's pilots added up (points, wins, new bests) or averaged (places, spread).
+  function teamRows(rows, kind) {
+    const by = new Map();
+    for (const r of rows) { if (!by.has(r.p.team)) by.set(r.p.team, []); by.get(r.p.team).push(r); }
+    const avg = (list, k) => { const v = list.map((r) => r[k]).filter((x) => x != null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+    const sum = (list, k) => list.reduce((a, r) => a + (r[k] || 0), 0);
+    return [...by].map(([team, list]) => kind === "race"
+      ? { team, pilots: list.length, pts: sum(list, "pts"), wins: sum(list, "wins"), fin: avg(list, "fin"), bhr: avg(list, "bhr"), spread: avg(list, "spread"), bonus: sum(list, "bonus"), ok: true }
+      : { team, pilots: list.length, avg: avg(list, pv.scope === "season" ? "avg" : "rank"), best: (() => { const v = list.map((r) => (pv.scope === "season" ? r.best : r.rank)).filter((x) => x != null); return v.length ? Math.min(...v) : null; })(), pbs: sum(list, "pbs"), total: list.every((r) => (pv.scope === "season" ? r.total : r.time) != null) ? sum(list, pv.scope === "season" ? "total" : "time") : null, vsDraft: avg(list, "vsDraft"), ok: true });
+  }
+
+  // Columns: [key, label, format, lower-is-better, title]
+  function columns(kind) {
+    const wk = pv.scope !== "season";
+    if (pv.mode === "teams") return kind === "race"
+      ? [["pts", "Pts", num, false], ["wins", "Heat wins", num, false], ["fin", "Avg finish", (v) => n2(v), true, "Average heat finishing place of the team's racers"], ["bhr", "Best heat #", (v) => n2(v, 1), true, "Average of the team's racers' best-heat rank among all 40 racers"], ["spread", "Spread %", (v) => n2(v), true, "Average consistency of the team's racers: spread of heat times as a % of their average"], ["bonus", "Bonus pts", num, false]]
+      : [["avg", "Avg LB #", (v) => n2(v, 1), true], ["best", "Best LB #", num, true], ["total", wk ? "Team total" : "Season total", (v) => (v == null ? "–" : fmt(v)), true], ["pbs", "New PBs", num, false], ["vsDraft", "vs draft", (v) => signed(v), false, "Average places above (▲) or below (▼) where the team's pilots were drafted"]];
+    if (kind === "race") return wk
+      ? [["tier", "Tier", num, true], ["pts", "Pts", num, false], ["place", "Tier place", (v) => (v ? ordinal(v) : "–"), true], ["wins", "Wins", num, false], ["podPct", "Top 3", pct, false, "Share of heats finished in the top 3"], ["fin", "Avg finish", (v) => n2(v), true], ["bhr", "Best heat #", num, true, "Their fastest heat, ranked against all 40 racers that day"], ["spread", "Spread %", (v) => n2(v), true, "Spread of their 8 heat times as a % of their average (lower = more consistent)"], ["bonus", "Bonus pts", num, false]]
+      : [["weeks", "Wks", num, false, "Weeks raced"], ["pts", "Pts", num, false], ["ppw", "Pts/wk", (v) => n2(v, 1), false], ["wins", "Wins", num, false], ["winPct", "Win %", pct, false], ["podPct", "Top 3", pct, false, "Share of heats finished in the top 3"], ["fin", "Avg finish", (v) => n2(v), true], ["bhr", "Best heat #", (v) => n2(v, 1), true, "Average weekly rank of their fastest heat against all 40 racers"], ["spread", "Spread %", (v) => n2(v), true, "Average weekly spread of heat times as a % of their average (lower = more consistent)"], ["bonus", "Bonus pts", num, false]];
+    return wk
+      ? [["time", "Time", (v) => (v == null ? "–" : fmt(v)), true], ["rank", "LB #", num, true, "Place among the league's 50 pilots"], ["off", "% off", (v) => (v == null ? "–" : `+${(+v).toFixed(2)}%`), true, "How far behind the week's fastest league time"], ["pbs", "New PBs", num, false], ["vsDraft", "vs draft", (v) => signed(v, 0), false, "Places above (▲) or below (▼) where they were drafted"], ["vsTryout", "vs tryout", (v) => signed(v, 0), false, "Places above (▲) or below (▼) their tryout spot"]]
+      : [["avg", "Avg LB #", (v) => n2(v, 1), true, "Average place among the league's 50 pilots"], ["best", "Best LB #", num, true], ["off", "Avg % off", (v) => (v == null ? "–" : `+${(+v).toFixed(2)}%`), true, "Average gap to each week's fastest league time"], ["total", "Season total", (v) => (v == null ? "–" : fmt(v)), true, "All their locked leaderboard times added up"], ["pbs", "New PBs", num, false], ["top10", "Top 10s", num, false, "Weeks in the league's top 10"], ["vsDraft", "vs draft", (v) => signed(v), false, "Average places above (▲) or below (▼) where they were drafted"], ["vsTryout", "vs tryout", (v) => signed(v), false, "Average places above (▲) or below (▼) their tryout spot"]];
+  }
+
+  function sortRows(rows, cols, kind) {
+    const key = `${kind}|${pv.mode}|${pv.scope === "season" ? "s" : "w"}`;
+    const def = kind === "race" ? (pv.mode === "teams" ? "pts" : pv.scope === "season" ? "ppw" : "pts") : pv.mode === "teams" ? "avg" : pv.scope === "season" ? "avg" : "rank";
+    let s = pv.sort[key];
+    if (!s || !cols.some((c) => c[0] === s.key)) s = pv.sort[key] = { key: def, dir: cols.find((c) => c[0] === def)?.[3] ? 1 : -1 };
+    const name = (r) => (r.p ? r.p.name : tname(r.team));
+    rows.sort((a, b) => {
+      if (a.ok !== b.ok) return a.ok ? -1 : 1;
+      const x = a[s.key], y = b[s.key];
+      if (x == null || y == null) return x == null && y == null ? name(a).localeCompare(name(b)) : x == null ? 1 : -1;
+      return (x - y) * s.dir || name(a).localeCompare(name(b));
+    });
+    return s;
+  }
+
+  function renderPilotStats() {
+    const el = $("viewPilotStats");
+    const d = state.data;
+    if (!d) { el.innerHTML = state.error ? `<div class="empty">Couldn't load pilot stats (${esc(state.error)}).</div>` : `<div class="empty">Loading pilot stats…</div>`; return; }
+    if (!d.weeks.length) { el.innerHTML = `<div class="empty">Pilot stats start once the first track locks.</div>`; return; }
+    if (pv.scope !== "season" && !d.weeks.some((w) => w.id === pv.scope)) pv.scope = "season";
+    setPilotsHash();
+    if (pv.page) return renderPilotPage(el, d);
+
+    const raceWeeks = d.weeks.filter((w) => w.races);
+    const scopes = [["season", "Season so far"], ...d.weeks.map((w) => [w.id, w.name + (w.races ? "" : " (Smash only)")])];
+    el.innerHTML = `
+      <div class="pv-bar">
+        <div class="pseg" role="tablist" aria-label="Stats">${Object.entries(PV_TABS).map(([k, l]) => `<button type="button" role="tab" data-tab="${k}" aria-selected="${pv.tab === k}">${l}</button>`).join("")}</div>
+        <label class="pv-scope"><span>Show</span><select id="pvScope">${scopes.map(([v, l]) => `<option value="${v}"${String(pv.scope) === String(v) ? " selected" : ""}>${esc(l)}</option>`).join("")}</select></label>
+        ${pv.tab !== "spotlight" ? `<div class="pseg small" role="group" aria-label="Rows">${["pilots", "teams"].map((m) => `<button type="button" data-mode="${m}" aria-pressed="${pv.mode === m}">${m === "pilots" ? "Pilots" : "Teams"}</button>`).join("")}</div>` : ""}
+        ${pv.tab !== "spotlight" && pv.mode === "pilots" ? `<input id="pvSearch" type="search" placeholder="Find a pilot" aria-label="Find a pilot" value="${esc(pv.q)}">` : ""}
+      </div>
+      <div id="pvBody"></div>`;
+    el.querySelector(".pseg[role=tablist]").addEventListener("click", (e) => { const b = e.target.closest("[data-tab]"); if (b) { pv.tab = b.dataset.tab; renderPilotStats(); } });
+    el.querySelector("#pvScope").addEventListener("change", (e) => { pv.scope = e.target.value === "season" ? "season" : +e.target.value; renderPilotStats(); });
+    el.querySelector("[data-mode]")?.parentElement.addEventListener("click", (e) => { const b = e.target.closest("[data-mode]"); if (b) { pv.mode = b.dataset.mode; renderPilotStats(); } });
+    const search = el.querySelector("#pvSearch");
+    if (search) search.addEventListener("input", () => { pv.q = search.value; renderPvBody(d); });
+    renderPvBody(d, raceWeeks);
+  }
+
+  function renderPvBody(d) {
+    const body = $("pvBody");
+    if (pv.tab === "spotlight") { body.innerHTML = spotlight(d); return; }
+    const kind = pv.tab;
+    if (kind === "race" && pv.scope !== "season" && !d.weeks.find((w) => w.id === pv.scope)?.races) { body.innerHTML = `<div class="empty">${esc(scopeName(d))}'s races aren't in yet.</div>`; return; }
+    const cols = columns(kind);
+    let rows = d.pilots.map((p) => (kind === "race" ? raceRow(p, d) : smashRow(p, d))).filter(Boolean);
+    if (pv.mode === "teams") rows = teamRows(rows, kind);
+    const s = sortRows(rows, cols, kind);
+    const q = pv.q.trim().toLowerCase();
+    const shown = pv.mode === "pilots" && q ? rows.filter((r) => r.p.name.toLowerCase().includes(q) || tname(r.p.team).toLowerCase().includes(q)) : rows;
+    const firstOut = shown.findIndex((r) => !r.ok);
+    body.innerHTML = `
+      <div class="table-wrap pv-wrap"><table class="pv-table">
+        <caption class="sr">${esc(PV_TABS[kind])}, ${esc(scopeName(d))}, sortable</caption>
+        <thead><tr><th class="num rk" scope="col">#</th><th class="who" scope="col">${pv.mode === "teams" ? "Team" : "Pilot"}</th>
+          ${cols.map(([k, l, , low, title]) => `<th class="num" scope="col" aria-sort="${s.key === k ? (s.dir === 1 ? "ascending" : "descending") : "none"}"><button type="button" data-sort="${k}" data-low="${low ? 1 : 0}"${title ? ` title="${esc(title)}"` : ""}>${l}${s.key === k ? `<i aria-hidden="true">${s.dir === 1 ? "↑" : "↓"}</i>` : ""}</button></th>`).join("")}</tr></thead>
+        <tbody>${shown.map((r, i) => `<tr class="${r.ok ? "" : "unq"}${i === firstOut ? " unq-first" : ""}">
+          <td class="num rk">${r.ok ? rows.indexOf(r) + 1 : "–"}</td>
+          <th class="who" scope="row">${r.p ? pilotLink(r.p.name, r.p.team, `<small>${esc(tname(r.p.team))}${r.p.captain ? " · Capt" : ""}</small>`) : `<span class="tw">${tdot(r.team)}<span>${esc(tname(r.team))}</span></span><small>${r.pilots} pilot${r.pilots === 1 ? "" : "s"}</small>`}</th>
+          ${cols.map(([k, , f]) => `<td class="num${s.key === k ? " on" : ""}">${f(r[k])}</td>`).join("")}
+        </tr>`).join("") || `<tr><td colspan="${cols.length + 2}" class="none">No pilots match.</td></tr>`}</tbody>
+      </table></div>
+      <p class="sub pv-note">${pvNote(kind, d)}</p>`;
+    body.querySelector("thead").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-sort]");
+      if (!b) return;
+      const key = `${kind}|${pv.mode}|${pv.scope === "season" ? "s" : "w"}`;
+      const cur = pv.sort[key];
+      pv.sort[key] = cur?.key === b.dataset.sort ? { key: cur.key, dir: -cur.dir } : { key: b.dataset.sort, dir: b.dataset.low === "1" ? 1 : -1 };
+      renderPvBody(d);
+    });
+  }
+
+  function pvNote(kind, d) {
+    const raced = d.weeks.filter((w) => w.races).length;
+    if (kind === "race") return pv.scope === "season"
+      ? `Race heats from ${raced} race day${raced === 1 ? "" : "s"}; sit-out weeks don't count. Points are tier points (10 for 1st down to 1). Rates and averages rank pilots with at least ${MIN_WEEKS} raced weeks. Bonus points are bonus-round heat points (8 down to 1). Click a column to sort.`
+      : `Tier heats from ${esc(scopeName(d))}. Pilots who sat out aren't listed. Click a column to sort.`;
+    return pv.scope === "season"
+      ? `LB # is a pilot's place among the league's 50 pilots on each week's locked leaderboard. Draft and tryout spots are among the same 50 pilots. New PBs count each new personal best the site saw before the lock.`
+      : `${esc(scopeName(d))}'s locked leaderboard. LB # is the place among the league's 50 pilots.`;
+  }
+
+  // ---- Spotlight: top three for the headline stats, then the closest battles and records ----
+  function spotlight(d) {
+    const season = pv.scope === "season";
+    if (!season && !d.weeks.find((w) => w.id === pv.scope)) return "";
+    const wk = season ? null : d.weeks.find((w) => w.id === pv.scope);
+    const race = d.pilots.map((p) => raceRow(p, d)).filter((r) => r && r.ok);
+    const smash = d.pilots.map((p) => smashRow(p, d)).filter(Boolean);
+    const podium = (title, rows, key, low, f, note) => {
+      const top = rows.filter((r) => r[key] != null).sort((a, b) => (a[key] - b[key]) * (low ? 1 : -1) || a.p.name.localeCompare(b.p.name)).slice(0, 3);
+      if (!top.length) return "";
+      return `<section class="pod"><h3>${title}</h3><ol>${top.map((r, i) => `<li><span class="medal m${i + 1}">${i + 1}</span>${pilotLink(r.p.name, r.p.team, `<small>${esc(tname(r.p.team))}</small>`)}<b>${f(r[key], r)}</b></li>`).join("")}</ol>${note ? `<p>${note}</p>` : ""}</section>`;
+    };
+    const showRace = season ? race.length : wk?.races;
+    const cards = [
+      showRace && podium(season ? "Points per week" : "Race points", race, season ? "ppw" : "pts", false, (v) => n2(v, 1), season ? "tier points per raced week" : "tier heat points"),
+      showRace && podium("Heat wins", race, "wins", false, (v, r) => `${v}<small>${pct(r.winPct)}</small>`),
+      showRace && podium("Best avg finish", race, "fin", true, (v) => n2(v)),
+      showRace && podium("Fastest on the day", race, "bhr", true, (v) => (season ? n2(v, 1) : "#" + v), season ? "average rank of their best heat across all 40 racers" : "best heat ranked across all 40 racers"),
+      showRace && podium("Most consistent", race, "spread", true, (v) => `${n2(v)}%`, "spread of heat times, % of average"),
+      season && race.length && podium("Win streak", race, "streak", false, (v) => `${v} heats`, "heat wins in a row"),
+      showRace && podium("Bonus round", race, "bonus", false, (v) => `${v} pts`),
+      podium(season ? "Best avg LB #" : "Leaderboard", smash, season ? "avg" : "rank", true, (v) => (season ? n2(v, 1) : "#" + v)),
+      season && podium("Season Smash total", smash, "total", true, (v) => fmt(v), "all locked times added up"),
+      podium("Most new PBs", smash, "pbs", false, (v) => `${v}`),
+      podium("Most improved", smash, "vsDraft", false, (v) => signed(v, season ? 1 : 0), "places above their draft spot"),
+    ].filter(Boolean);
+
+    const inScope = (x) => season || x.week === pv.scope;
+    const wname = (id) => d.weeks.find((w) => w.id === id)?.name || "";
+    const top5 = (list, by, desc = false) => list.filter(inScope).sort((a, b) => (desc ? by(b) - by(a) : by(a) - by(b))).slice(0, 5);
+    const gap = (g) => `<b class="gap">${g.toFixed(3)}<small>s</small></b>`;
+    const pair = (b, what) => `<li><div class="bl">${pilotLink(b.a.pilot, b.a.team)} <span class="over">over</span> ${pilotLink(b.b.pilot, b.b.team)}<small>${esc(wname(b.week))} · ${esc(b.label || "Leaderboard")} · ${what(b)}</small></div>${gap(b.gap)}</li>`;
+    const list = (title, sub, items) => `<section class="chart-card bat"><div class="sec-head"><h2>${title}</h2><span>${sub}</span></div><ol>${items || `<li class="none">Nothing yet</li>`}</ol></section>`;
+    const battles = [
+      list("Closest battles", "any position", top5(d.battles.close, (x) => x.gap).map((b) => pair(b, (x) => `for ${ordinal(x.pos)}`)).join("")),
+      list("Closest heat wins", "1st vs 2nd", top5(d.battles.wins, (x) => x.gap).map((b) => pair(b, () => "for the win")).join("")),
+      list("Closest full heats", "1st to 10th", top5(d.battles.heats, (x) => x.gap).map((h) => `<li><div class="bl"><span>${esc(h.label)}</span><small>${esc(wname(h.week))} · ${esc(h.a.pilot)} won, ${esc(h.b.pilot)} 10th</small></div>${gap(h.gap)}</li>`).join("")),
+      list("Closest leaderboard gaps", "locked times", top5(d.battles.smash, (x) => x.gap).map((b) => pair(b, (x) => `for LB #${x.pos}`)).join("")),
+      list("Biggest heat-win margins", "1st to 2nd", top5(d.records.margins, (x) => x.gap, true).map((b) => `<li><div class="bl">${pilotLink(b.a.pilot, b.a.team)} <span class="over">ahead of</span> ${pilotLink(b.b.pilot, b.b.team)}<small>${esc(wname(b.week))} · ${esc(b.label)}</small></div>${gap(b.gap)}</li>`).join("")),
+      list("Fastest heats", season ? "each week's track differs" : "fastest single heats", (season ? d.weeks.filter((w) => w.races).map((w) => d.records.fastest.find((x) => x.week === w.id)).filter(Boolean) : top5(d.records.fastest, (x) => x.time)).map((x) => `<li><div class="bl">${pilotLink(x.pilot, x.team)}<small>${esc(wname(x.week))} · ${esc(x.label)}</small></div><b class="gap">${fmt(x.time)}</b></li>`).join("")),
+    ];
+    return `
+      <div class="pods">${cards.join("") || `<div class="empty">Nothing to show for ${esc(scopeName(d))} yet.</div>`}</div>
+      ${season ? `<p class="sub pv-note">Rates and averages need at least ${MIN_WEEKS} raced weeks. Each week is a different track and quad, so season stats use places and percentages rather than raw times.</p>` : ""}
+      <div class="sec-head pv-h"><h2>Battles and records</h2><span>${esc(scopeName(d))}</span></div>
+      <div class="bats">${battles.join("")}</div>`;
+  }
+
+  // ---- One pilot's page ----
+  function renderPilotPage(el, d) {
+    const p = d.pilots.find((x) => x.name === pv.page);
+    if (!p) { el.innerHTML = `<p><a class="back" href="#pilots">← All pilots</a></p><div class="empty">No pilot called ${esc(pv.page)}.</div>`; return; }
+    const s = p.season;
+    const raced = d.weeks.filter((w) => w.races);
+    const tile = (v, label, sub) => `<div class="tile"><b>${v}</b><span>${label}${sub ? `<small>${sub}</small>` : ""}</span></div>`;
+    const teamMates = d.pilots.filter((x) => x.team === p.team && x.name !== p.name);
+    const rows = d.weeks.map((w) => {
+      const wk = p.weeks[w.id], sm = wk.smash, r = wk.race;
+      const raceCells = !w.races ? `<td colspan="6" class="muted">Races not in yet</td>`
+        : r?.sat ? `<td colspan="6" class="muted">Sat out</td>`
+        : r ? `<td class="num">${r.tier}</td><td class="num">${r.points}</td><td class="num">${ordinal(r.place)}</td><td class="num">${r.wins}</td><td class="num">${r.bestHeatRank ? "#" + r.bestHeatRank : "–"}</td><td class="num">${r.spreadPct != null ? n2(r.spreadPct) + "%" : "–"}</td>`
+        : `<td colspan="6" class="muted">–</td>`;
+      return `<tr><th scope="row">${esc(w.name)}<small>${esc(w.quad || "")}</small></th>
+        <td class="num">${sm?.time != null ? fmt(sm.time) : "–"}</td><td class="num">${sm?.rank ? "#" + sm.rank : "–"}</td><td class="num">${sm?.pctOff != null ? "+" + sm.pctOff.toFixed(2) + "%" : "–"}</td><td class="num">${sm ? sm.pbs : "–"}</td>
+        ${raceCells}<td class="num">${wk.bonus ? wk.bonus.points : "–"}</td></tr>`;
+    }).join("");
+
+    const heatCell = (h, max) => `<div class="hc${h.pos === 1 ? " win" : h.pos && h.pos <= 3 ? " top3" : ""}${h.time == null ? " nt" : ""}" title="${h.time == null ? (h.dnf ? "DNF" : "No time") : fmt(h.time) + "s"}, ${h.pos ? ordinal(h.pos) + " of " + max : "no place"}, ${h.pts} pts"><b>${h.pos ? ordinal(h.pos) : "–"}</b><span>${h.time == null ? (h.dnf ? "DNF" : "no time") : fmt(h.time)}</span></div>`;
+    const heatsHtml = raced.map((w) => {
+      const wk = p.weeks[w.id], r = wk.race;
+      if (!r) return "";
+      if (r.sat) return `<div class="hw"><h3>${esc(w.name)}</h3><p class="muted">Sat out this week.</p></div>`;
+      const bonusRows = wk.bonus ? `<div class="hrow"><span class="hl">Bonus</span><div class="hcells">${wk.bonus.heats.map((h) => `<div class="hb"><small>${esc(h.label.replace("Semifinal", "Semi"))} H${h.heat}</small>${heatCell(h, 8)}</div>`).join("")}</div></div>` : "";
+      return `<div class="hw"><h3>${esc(w.name)} <span>Tier ${r.tier} · ${r.points} pts · ${ordinal(r.place)} in tier${r.avgTime != null ? ` · avg ${fmt(r.avgTime)} ± ${r.range.toFixed(3)}` : ""}</span></h3>
+        <div class="hrow"><span class="hl">Heats</span><div class="hcells">${r.heats.map((h) => heatCell(h, 10)).join("")}</div></div>${bonusRows}</div>`;
+    }).join("");
+
+    const logs = d.weeks.map((w) => {
+      const sm = p.weeks[w.id].smash;
+      if (!sm?.log?.length) return "";
+      const rows = [...sm.log].reverse().map((e) => `<tr><td>${esc(dayShort.format(new Date(e.at)))}</td><td class="num">${fmt(e.time)}</td><td class="num">${e.prev != null ? `<span class="up">−${(e.prev - e.time).toFixed(3)}</span>` : `<span class="muted">first time</span>`}</td></tr>`).join("");
+      return `<details class="fold pblog"><summary><h3>${esc(w.name)} <span>${sm.pbs} new PB${sm.pbs === 1 ? "" : "s"} · final ${sm.time != null ? fmt(sm.time) : "–"}${sm.rank ? ` · LB #${sm.rank}` : ""}</span></h3></summary>
+        <div class="table-wrap"><table class="stbl"><thead><tr><th>When (your time)</th><th class="num">Time</th><th class="num">Gain</th></tr></thead><tbody>${rows}</tbody></table></div></details>`;
+    }).join("");
+
+    el.innerHTML = `
+      <p class="pv-back"><a class="back" href="#pilots${pv.tab !== "spotlight" || pv.scope !== "season" ? "/" + pv.tab + (pv.scope !== "season" ? "/" + pv.scope : "") : ""}">← All pilots</a></p>
+      <section class="pcard">
+        <div class="pteam">${tdot(p.team)}<b>${esc(tname(p.team))}</b><span>${esc(p.team)}</span>${p.captain ? '<span class="cap">Capt</span>' : ""}</div>
+        <dl class="pmeta">
+          <div><dt>Draft</dt><dd>${p.draftPos != null ? "#" + p.draftPos : "–"}</dd></div>
+          <div><dt>Tryout spot</dt><dd>${p.tryoutPlace != null ? "#" + p.tryoutPlace : "–"}<small>${p.tryoutRank != null ? `rank ${p.tryoutRank} overall` : ""}</small></dd></div>
+          <div><dt>Weeks raced</dt><dd>${s.weeksRaced}<small>sat out ${s.weeksSat}</small></dd></div>
+          <div><dt>Teammates</dt><dd class="mates">${teamMates.map((m) => `<a href="#pilot/${encodeURIComponent(m.name)}">${esc(m.name)}</a>`).join(", ")}</dd></div>
+        </dl>
+      </section>
+      <div class="stat-tiles">
+        ${tile(s.ptsPerWeek != null ? n2(s.ptsPerWeek, 1) : "–", "points per raced week", `${s.points} tier pts`)}
+        ${tile(s.wins, "heat wins", s.heats ? `${pct(s.winPct)} of ${s.heats} heats` : "")}
+        ${tile(n2(s.avgFinish), "average finish", s.podiumPct != null ? `top 3 in ${pct(s.podiumPct)}` : "")}
+        ${tile(s.avgBestHeatRank != null ? "#" + n2(s.avgBestHeatRank, 1) : "–", "best heat rank", "vs all 40 racers")}
+        ${tile(s.spreadPct != null ? n2(s.spreadPct) + "%" : "–", "spread", "lower is more consistent")}
+        ${tile(s.bonusPoints, "bonus-round points", s.bonusHeats ? `${s.bonusHeats} heats, ${s.bonusWins} won` : "")}
+        ${tile(s.avgRank != null ? "#" + n2(s.avgRank, 1) : "–", "average LB #", s.bestRank ? `best #${s.bestRank}` : "")}
+        ${tile(s.pbs, "new personal bests", s.vsDraft != null ? `${s.vsDraft >= 0 ? "▲" : "▼"} ${Math.abs(s.vsDraft).toFixed(1)} vs draft` : "")}
+      </div>
+      <section class="chart-card"><div class="sec-head"><h2>Week by week</h2><span>leaderboard · races</span></div>
+        <div class="table-wrap pv-wrap flat"><table class="pv-table wbw">
+          <thead><tr><th scope="col">Week</th><th class="num" scope="col">Time</th><th class="num" scope="col">LB #</th><th class="num" scope="col">% off</th><th class="num" scope="col">PBs</th><th class="num" scope="col">Tier</th><th class="num" scope="col">Pts</th><th class="num" scope="col">Place</th><th class="num" scope="col">Wins</th><th class="num" scope="col" title="Their fastest heat, ranked against all 40 racers">Best heat #</th><th class="num" scope="col">Spread</th><th class="num" scope="col">Bonus</th></tr></thead>
+          <tbody>${rows}</tbody></table></div>
+        <p class="sub">LB # is their place among the league's 50 pilots; % off is the gap to that week's fastest league time. Place is their finish in their tier for the day.</p>
+      </section>
+      ${heatsHtml ? `<section class="chart-card"><div class="sec-head"><h2>Heat results</h2><span>place and time, tier heats then bonus round</span></div><div class="hweeks">${heatsHtml}</div>
+        <div class="hkey"><span><i class="win"></i>Win</span><span><i class="top3"></i>2nd–3rd</span><span><i></i>4th or lower</span></div></section>` : ""}
+      ${logs ? `<section class="chart-card"><div class="sec-head"><h2>Leaderboard grind</h2><span>new personal bests before each lock</span></div>${logs}</section>` : ""}`;
+  }
+  const dayShort = new Intl.DateTimeFormat([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+
+  // Links inside the Pilots tab change the page without a reload.
+  $("viewPilotStats").addEventListener("click", (e) => {
+    const a = e.target.closest("a[href^='#pilot']");
+    if (!a || e.metaKey || e.ctrlKey || e.shiftKey) return;
+    e.preventDefault();
+    location.hash !== a.getAttribute("href") && history.pushState(null, "", a.getAttribute("href"));
+    readPilotsHash();
+    renderHeader();
+    renderPilotStats();
+    window.scrollTo({ top: 0 });
+  });
+  window.addEventListener("popstate", () => { if (isPilots() && readPilotsHash()) { renderHeader(); renderPilotStats(); } });
+
   // ---------- standings ----------
   function renderStandings() {
     if (isOverall()) return renderOverall();
+    if (isPilots()) return renderPilotStats();
     const d = state.data;
     if (!d || !d.standings) {
       const t = currentTrack();
@@ -237,11 +554,11 @@
     $("viewRacesBtn").setAttribute("aria-selected", v === "races");
     $("viewStatsBtn").setAttribute("aria-selected", v === "stats");
     $("viewStats").hidden = v !== "stats";
-    if (v === "stats" && !isOverall()) loadStats();
+    if (v === "stats" && !isSeasonTab()) loadStats();
     $("viewRaceStatsBtn").setAttribute("aria-selected", v === "racestats");
     $("viewRaceStats").hidden = v !== "racestats";
     $("viewRaces").hidden = v !== "races";
-    if ((v === "races" || v === "racestats") && !isOverall()) { loadRaces(); liveStart(state.current, loadRaces); }
+    if ((v === "races" || v === "racestats") && !isSeasonTab()) { loadRaces(); liveStart(state.current, loadRaces); }
     else liveStop();
     $("viewTeams").hidden = v !== "teams";
     $("viewPilots").hidden = v !== "pilots";
@@ -260,7 +577,7 @@
 
   async function loadRaces() {
     const id = state.current;
-    if (id == null || isOverall()) return;
+    if (id == null || isSeasonTab()) return;
     if (!state.races || state.races.id !== id) { state.races = { id, data: null, error: null }; renderRaces(); renderRaceStats(); }
     try {
       const res = await api(`/tracks/${id}/races`);
@@ -441,7 +758,7 @@
 
   async function loadStats(quiet = false) {
     const id = state.current;
-    if (id == null || isOverall()) return;
+    if (id == null || isSeasonTab()) return;
     if (!quiet || !state.stats || state.stats.id !== id) { state.stats = { id, data: null, error: null }; renderStats(); }
     try {
       const res = await api(`/tracks/${id}/stats`);
@@ -1202,7 +1519,7 @@
     renderStatus();
     renderStandings();
     try {
-      const res = await api(id === OVERALL ? "/overall" : `/tracks/${id}`);
+      const res = await api(id === OVERALL ? "/overall" : id === PILOTS ? "/pilots" : `/tracks/${id}`);
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
       if (state.stopped || id !== state.current) return; // switched tabs meanwhile
@@ -1219,8 +1536,8 @@
         renderStatus();
         renderStandings();
         schedulePoll();
-        if (state.view === "races" && !isOverall()) loadRaces();
-        if (state.view === "stats" && !isOverall() && state.data?.track?.status !== "locked") loadStats(true);
+        if (state.view === "races" && !isSeasonTab()) loadRaces();
+        if (state.view === "stats" && !isSeasonTab() && state.data?.track?.status !== "locked") loadStats(true);
       }
     }
   }
@@ -1230,7 +1547,7 @@
     const d = state.data;
     let wait = null;
     if (state.error) wait = RETRY_MS;
-    else if (isOverall()) wait = 10 * 60_000;
+    else if (isSeasonTab()) wait = 10 * 60_000;
     else if (d && (d.track.status === "live" || d.track.status === "locking")) {
       const target = d.nextUpdateAt ? Date.parse(d.nextUpdateAt) + POLL_AFTER_HOUR_MS : now() + RETRY_MS;
       wait = Math.max(30_000, target - now());
@@ -1260,6 +1577,7 @@
     }
     if (adminIdFromHash()) { state.error = null; state.current = adminIdFromHash(); return enterAdmin(adminIdFromHash()); }
     if (location.hash === "#overall") { state.error = null; return selectTrack(OVERALL); }
+    if (readPilotsHash()) { state.error = null; return selectTrack(PILOTS); }
     const fromHash = +((location.hash.match(/^#track-(\d+)$/) || [])[1] || 0);
     const pick =
       state.tracks.find((t) => t.id === fromHash && t.status !== "upcoming") ||
@@ -1279,6 +1597,7 @@
       return selectTrack(back, true);
     }
     if (location.hash === "#overall") return selectTrack(OVERALL);
+    if (readPilotsHash()) return selectTrack(PILOTS, true);
     const id = +((location.hash.match(/^#track-(\d+)$/) || [])[1] || 0);
     const t = state.tracks.find((x) => x.id === id);
     if (t && t.status !== "upcoming") selectTrack(id);

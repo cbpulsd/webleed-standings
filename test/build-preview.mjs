@@ -60,7 +60,7 @@ ${css}
     if (window.__standingsStop) window.__standingsStop();
     await P.setup(name);
     document.getElementById("app").innerHTML = MARKUP;
-    try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
+    try { history.replaceState(null, "", location.pathname + location.search + (P.scenarios[name].hash || "")); } catch (e) {}
     new Function(APP)();
     const sc = P.scenarios[name];
     document.getElementById("scenarioNote").textContent = sc.note || "";
@@ -69,7 +69,7 @@ ${css}
     if (sc.view === "racestats") setTimeout(() => document.getElementById("viewRaceStatsBtn")?.click(), 300);
   }
   bar.addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) boot(b.dataset.k); });
-  boot(${statsFixture ? '"week1"' : '"live"'});
+  boot(${statsFixture ? '"pilots"' : '"live"'});
 })();
 </script>
 `;

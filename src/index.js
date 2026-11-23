@@ -8,6 +8,7 @@
 //   GET  /api/tracks/:id/races/live           -> WebSocket: sends {"type":"update"} whenever race day changes
 //   GET  /api/tracks/:id/stats                -> team totals over time, time cut, most improved, biggest drops, activity
 //   GET  /api/overall                         -> season table: Smash and Race points per team per week
+//   GET  /api/pilots                          -> every pilot's stats per week and season so far, closest battles, records
 //   GET  /api/health/source/:id               -> read-only check that the game endpoint answers (cached 5 min)
 //   POST /api/admin/tracks/:id/refresh|lock   -> manual controls (needs the ADMIN_TOKEN secret)
 //   Race director page. Sign in once; the pass goes in an x-admin-session header:
@@ -31,6 +32,7 @@ import { trackIdFromUrl } from "./leaderboard.js";
 import { getEvents, getHistory, getRecord } from "./store.js";
 import { computeStats } from "./stats.js";
 import { DRAFT_ORDER, DRAFT_RANKS } from "./draft.js";
+import { computePilotStats } from "./pilotstats.js";
 import { seedFor } from "./seed/index.js";
 import { findTrack, lockTrack, lockTime, overridesFor, runSchedule, standingsFor, syncTrack, teamsFor, trackStatus } from "./sync.js";
 
@@ -84,6 +86,12 @@ export async function route(request, url, env, ctx, now, deps = {}) {
   // /api/overall
   if (request.method === "GET" && parts[1] === "overall" && parts.length === 2) {
     return json(await overall(env, now), 200, "public, max-age=60");
+  }
+
+  // /api/pilots: every pilot's stats, week by week and season so far (locked weeks only)
+  if (request.method === "GET" && parts[1] === "pilots" && parts.length === 2) {
+    const weeks = deps.pilotWeeks ? await deps.pilotWeeks() : await pilotWeeks(env, now);
+    return json({ season: SEASON, ...computePilotStats({ weeks, teams: TEAMS, draft: { ranks: DRAFT_RANKS, order: DRAFT_ORDER } }) }, 200, "public, max-age=300");
   }
 
   // /api/export: everything the site has, as one JSON file (cached at the edge for 5 minutes).
@@ -383,6 +391,27 @@ function withLatest(track, record, hist) {
   if (!record?.rows || record.status === "locked" || !record.fetchedAt) return hist;
   if (hist.length && hist[hist.length - 1].at >= record.fetchedAt) return hist;
   return [...hist, compactSnapshot(standingsFor(track, record.rows), record.fetchedAt)];
+}
+
+// What the Pilots tab is built from: each locked week's standings, race results and the
+// league pilots' new bests up to the lock.
+async function pilotWeeks(env, now) {
+  const out = [];
+  for (const track of TRACKS) {
+    if (!track.leaderboardUrl) continue;
+    const record = await getRecord(env, track.id);
+    if (record?.status !== "locked") continue;
+    const races = track.raceDay ? await racesFor(env, track, now) : null;
+    const seed = seedFor(track.id, env.STATS_SEEDS);
+    const evts = withSeedEvents(seed.events, await getEvents(env, track.id));
+    const teams = record.teams || teamsFor(track);
+    const roster = new Map();
+    for (const t of teams) for (const p of [t.captain, ...t.pilots]) { roster.set(norm(p), p); if (ALIASES[norm(p)]) roster.set(ALIASES[norm(p)], p); }
+    const lock = Date.parse(record.lockedAt || track.locksAt);
+    const bests = evts.map((e) => ({ pilot: roster.get(norm(e.name)), at: Date.parse(e.at), time: e.time })).filter((e) => e.pilot && e.at <= lock);
+    out.push({ id: track.id, name: `Week ${track.id}`, quad: track.quad?.name || null, lockedAt: record.lockedAt || null, smash: applyOverrides(record.standings, overridesFor(track)), races, bests });
+  }
+  return out;
 }
 
 // Seed events (from the Discord bot) plus the site's own. A site event the seed already has
