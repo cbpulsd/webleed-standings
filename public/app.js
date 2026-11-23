@@ -204,6 +204,7 @@
   // and one page per pilot. Links look like #pilots, #pilots/race/2, #pilot/<name>.
   const pv = { page: null, tab: "spotlight", scope: "season", mode: "pilots", q: "", sort: {}, stat: null, statAll: false, bat: null, batAll: false };
   const SHOW_MANY = 20; // Spotlight leaderboards show the top 20, then everyone
+  const BAT_MAX = 50; // Battles & Records lists open to at most 50 rows
   const PV_TABS = { spotlight: "Spotlight", race: "Race stats", smash: "Smash stats" };
   const MIN_WEEKS = 2; // season rate stats (per week, %, averages) need this many raced weeks to rank
 
@@ -437,8 +438,11 @@
       hasRace && { id: "fast", label: "Fastest heats", about: season ? "Fastest single heat times, week by week (each week is a different track)." : "Fastest single heat times of the day.", items: fastest, row: (x) => `<li><span class="medal">${x.n}</span><div class="bl">${pilotLink(x.pilot, x.team)}<small>${esc(wname(x.week))} · ${esc(x.label)}</small></div><b class="gap">${fmt(x.time)}</b></li>` },
     ].filter(Boolean);
     const bat = bats.find((x) => x.id === pv.bat) || bats[0];
-    let shownBat = bat.items;
-    if (!pv.batAll) shownBat = bat.id === "fast" && season ? bat.items.filter((x) => x.n <= Math.ceil(SHOW_MANY / Math.max(1, d.weeks.filter((w) => w.races).length))) : bat.items.slice(0, SHOW_MANY);
+    const raceWeekCount = Math.max(1, d.weeks.filter((w) => w.races).length);
+    const perWeek = (n) => bat.items.filter((x) => x.n <= Math.ceil(n / raceWeekCount));
+    const byWeek = bat.id === "fast" && season;
+    const fullBat = byWeek ? bat.items.filter((x) => x.n <= Math.floor(BAT_MAX / raceWeekCount)) : bat.items.slice(0, BAT_MAX);
+    const shownBat = pv.batAll ? fullBat : byWeek ? perWeek(SHOW_MANY) : bat.items.slice(0, SHOW_MANY);
     let lastWeek = null;
     const batRows = shownBat.map((x) => {
       const head = bat.id === "fast" && season && x.week !== lastWeek ? `<li class="wk">${esc(wname(x.week))}</li>` : "";
@@ -462,7 +466,7 @@
         <div class="chart-card lbx-card bat">
           <div class="lbx-head"><h3>${esc(bat.label)}</h3><p>${esc(bat.about)}</p></div>
           <ol>${batRows || `<li class="none">Nothing yet</li>`}</ol>
-          ${shownBat.length < bat.items.length || pv.batAll ? `<button type="button" class="more" data-all="bat" aria-expanded="${pv.batAll}">${pv.batAll ? (bat.id === "fast" && season ? "Show fewer" : `Show top ${SHOW_MANY}`) : `Show all ${bat.items.length}`}</button>` : ""}
+          ${fullBat.length > (byWeek ? perWeek(SHOW_MANY).length : SHOW_MANY) ? `<button type="button" class="more" data-all="bat" aria-expanded="${pv.batAll}">${pv.batAll ? (byWeek ? "Show fewer" : `Show top ${SHOW_MANY}`) : byWeek ? `Show top ${Math.floor(BAT_MAX / raceWeekCount)} of each week` : `Show top ${fullBat.length}`}</button>` : ""}
         </div>
       </section>`;
   }
