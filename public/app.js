@@ -121,11 +121,10 @@
   function renderHeader() {
     if (isPilots()) {
       const p = pv.page && state.data?.pilots?.find((x) => x.name === pv.page);
-      $("title").textContent = p ? p.name : "Season Stats";
+      // The page header stays the same on a pilot's page; their name heads the body below the tabs.
+      $("title").textContent = "Season Stats";
       document.title = p ? `${p.name} · Season 5 Stats` : "Season 5 Stats";
-      $("sub").textContent = p
-        ? `${tname(p.team)}${p.captain ? " captain" : ""}. Every week's leaderboard time, race heats and bonus round, plus the season so far.`
-        : "Every league pilot's stats from the locked weeks: race heats, the bonus round, and each week's leaderboard. Pick a pilot for their own page.";
+      $("sub").textContent = "Every league pilot's stats from the locked weeks: race heats, the bonus round, and each week's leaderboard. Pick a pilot for their own page.";
       return;
     }
     if (isOverall()) {
@@ -580,6 +579,10 @@
 
     el.innerHTML = `
       <p class="pv-back"><a class="back" href="#stats${pv.tab !== "spotlight" || pv.scope !== "season" ? "/" + pv.tab + (pv.scope !== "season" ? "/" + pv.scope : "") : ""}">← All stats</a></p>
+      <div class="phead">
+        <h2>${esc(p.name)}</h2>
+        <p class="sub">${esc(tname(p.team))}${p.captain ? " captain" : ""}. Every week's leaderboard time, race heats and bonus round, plus the season so far.</p>
+      </div>
       <section class="pcard">
         <div class="pteam">${tdot(p.team)}<b>${esc(tname(p.team))}</b><span>${esc(p.team)}</span>${p.captain ? '<span class="cap">Capt</span>' : ""}</div>
         <dl class="pmeta">
