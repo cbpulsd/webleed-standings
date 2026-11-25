@@ -203,7 +203,7 @@
 
   // ---------- pilots tab ----------
   // One stats page for the season (Spotlight, Race, Smash; season or one week; pilots or teams)
-  // and one page per pilot. Links look like #pilots, #pilots/race/2, #pilot/<name>.
+  // and one page per pilot. Links look like #stats, #stats/race/2, #pilot/<name> (old #pilots links still work).
   const pv = { page: null, tab: "spotlight", scope: "season", mode: "pilots", q: "", sort: {}, stat: null, statAll: false, bat: null, batAll: false };
   const SHOW_MANY = 10; // Spotlight lists show the top 10, opening to everyone (stats) or BAT_MAX (battles)
   const BAT_MAX = 50; // Battles & Records lists open to at most 50 rows
@@ -214,7 +214,7 @@
     const h = location.hash;
     let m = h.match(/^#pilot\/(.+)$/);
     if (m) { pv.page = decodeURIComponent(m[1]); return true; }
-    m = h.match(/^#pilots(?:\/(spotlight|race|smash))?(?:\/(\d+))?$/);
+    m = h.match(/^#(?:stats|pilots)(?:\/(spotlight|race|smash))?(?:\/(\d+))?$/);
     if (!m) return false;
     pv.page = null;
     if (m[1]) pv.tab = m[1];
@@ -222,7 +222,7 @@
     return true;
   }
   function setPilotsHash() {
-    const h = pv.page ? `#pilot/${encodeURIComponent(pv.page)}` : `#pilots${pv.tab !== "spotlight" || pv.scope !== "season" ? "/" + pv.tab : ""}${pv.scope !== "season" ? "/" + pv.scope : ""}`;
+    const h = pv.page ? `#pilot/${encodeURIComponent(pv.page)}` : `#stats${pv.tab !== "spotlight" || pv.scope !== "season" ? "/" + pv.tab : ""}${pv.scope !== "season" ? "/" + pv.scope : ""}`;
     if (location.hash !== h) { try { history.replaceState(null, "", h); } catch (e) {} }
   }
   const pilotLink = (name, team, extra = "") => `<a class="plink" href="#pilot/${encodeURIComponent(name)}">${tdot(team)}<span>${esc(name)}</span></a>${extra}`;
@@ -544,7 +544,7 @@
   // ---- One pilot's page ----
   function renderPilotPage(el, d) {
     const p = d.pilots.find((x) => x.name === pv.page);
-    if (!p) { el.innerHTML = `<p><a class="back" href="#pilots">← All stats</a></p><div class="empty">No pilot called ${esc(pv.page)}.</div>`; return; }
+    if (!p) { el.innerHTML = `<p><a class="back" href="#stats">← All stats</a></p><div class="empty">No pilot called ${esc(pv.page)}.</div>`; return; }
     const s = p.season;
     const raced = d.weeks.filter((w) => w.races);
     const tile = (v, label, sub) => `<div class="tile"><b>${v}</b><span>${label}${sub ? `<small>${sub}</small>` : ""}</span></div>`;
@@ -579,7 +579,7 @@
     }).join("");
 
     el.innerHTML = `
-      <p class="pv-back"><a class="back" href="#pilots${pv.tab !== "spotlight" || pv.scope !== "season" ? "/" + pv.tab + (pv.scope !== "season" ? "/" + pv.scope : "") : ""}">← All stats</a></p>
+      <p class="pv-back"><a class="back" href="#stats${pv.tab !== "spotlight" || pv.scope !== "season" ? "/" + pv.tab + (pv.scope !== "season" ? "/" + pv.scope : "") : ""}">← All stats</a></p>
       <section class="pcard">
         <div class="pteam">${tdot(p.team)}<b>${esc(tname(p.team))}</b><span>${esc(p.team)}</span>${p.captain ? '<span class="cap">Capt</span>' : ""}</div>
         <dl class="pmeta">
@@ -611,9 +611,9 @@
   }
   const dayShort = new Intl.DateTimeFormat([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
-  // Links inside the Pilots tab change the page without a reload.
+  // Links inside the Stats tab change the page without a reload.
   $("viewPilotStats").addEventListener("click", (e) => {
-    const a = e.target.closest("a[href^='#pilot']");
+    const a = e.target.closest("a[href^='#pilot'], a[href^='#stats']");
     if (!a || e.metaKey || e.ctrlKey || e.shiftKey) return;
     e.preventDefault();
     location.hash !== a.getAttribute("href") && history.pushState(null, "", a.getAttribute("href"));
