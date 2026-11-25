@@ -68,7 +68,7 @@
       `<button class="track-tab overall-tab" role="tab" type="button" data-id="${OVERALL}" data-status="overall"
         aria-selected="${isOverall()}"><span>Standings</span></button>` +
       `<button class="track-tab overall-tab" role="tab" type="button" data-id="${PILOTS}" data-status="overall"
-        aria-selected="${isPilots()}"><span>Pilots</span></button>` +
+        aria-selected="${isPilots()}"><span>Stats</span></button>` +
       state.tracks
       .map((t) => {
         const off = t.status === "upcoming";
@@ -121,8 +121,8 @@
   function renderHeader() {
     if (isPilots()) {
       const p = pv.page && state.data?.pilots?.find((x) => x.name === pv.page);
-      $("title").textContent = p ? p.name : "Pilot Stats";
-      document.title = p ? `${p.name} · Season 5 Pilot Stats` : "Season 5 Pilot Stats";
+      $("title").textContent = p ? p.name : "Season Stats";
+      document.title = p ? `${p.name} · Season 5 Stats` : "Season 5 Stats";
       $("sub").textContent = p
         ? `${tname(p.team)}${p.captain ? " captain" : ""}. Every week's leaderboard time, race heats and bonus round, plus the season so far.`
         : "Every league pilot's stats from the locked weeks: race heats, the bonus round, and each week's leaderboard. Pick a pilot for their own page.";
@@ -544,7 +544,7 @@
   // ---- One pilot's page ----
   function renderPilotPage(el, d) {
     const p = d.pilots.find((x) => x.name === pv.page);
-    if (!p) { el.innerHTML = `<p><a class="back" href="#pilots">← All pilots</a></p><div class="empty">No pilot called ${esc(pv.page)}.</div>`; return; }
+    if (!p) { el.innerHTML = `<p><a class="back" href="#pilots">← All stats</a></p><div class="empty">No pilot called ${esc(pv.page)}.</div>`; return; }
     const s = p.season;
     const raced = d.weeks.filter((w) => w.races);
     const tile = (v, label, sub) => `<div class="tile"><b>${v}</b><span>${label}${sub ? `<small>${sub}</small>` : ""}</span></div>`;
@@ -579,7 +579,7 @@
     }).join("");
 
     el.innerHTML = `
-      <p class="pv-back"><a class="back" href="#pilots${pv.tab !== "spotlight" || pv.scope !== "season" ? "/" + pv.tab + (pv.scope !== "season" ? "/" + pv.scope : "") : ""}">← All pilots</a></p>
+      <p class="pv-back"><a class="back" href="#pilots${pv.tab !== "spotlight" || pv.scope !== "season" ? "/" + pv.tab + (pv.scope !== "season" ? "/" + pv.scope : "") : ""}">← All stats</a></p>
       <section class="pcard">
         <div class="pteam">${tdot(p.team)}<b>${esc(tname(p.team))}</b><span>${esc(p.team)}</span>${p.captain ? '<span class="cap">Capt</span>' : ""}</div>
         <dl class="pmeta">
